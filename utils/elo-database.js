@@ -209,6 +209,30 @@ export default class EloDatabase {
     }
   }
 
+  async searchPlayer(identifier) {
+    if (!this.sequelize || !identifier) return null;
+    const id = identifier.trim();
+    try {
+      return await this._executeWithRetry(async () => {
+        const record = await this.models.PlayerStats.findOne({ where: { eosID: id } });
+        if (record) return record.toJSON();
+
+        const fuzzy = await this.models.PlayerStats.findOne({
+          where: {
+            [Sequelize.Op.or]: [
+              { steamID: id },
+              { name: { [Sequelize.Op.like]: `%${id}%` } }
+            ]
+          }
+        });
+        return fuzzy ? fuzzy.toJSON() : null;
+      });
+    } catch (error) {
+      Logger.verbose('EloTracker', 1, `[DB] Error searching for player ${id}: ${error.message}`);
+      return null;
+    }
+  }
+
   async upsertPlayerStats(eosID, fields) {
     if (!this.sequelize) return null;
     try {
@@ -246,7 +270,16 @@ export default class EloDatabase {
             const { eosID, ...fields } = update;
             const record = existingMap.get(eosID);
             if (record) {
-              await record.update(fields, { transaction: t });
+              await record.update({
+                mu: fields.mu,
+                sigma: fields.sigma,
+                wins: record.wins + (fields.wins ?? 0),
+                losses: record.losses + (fields.losses ?? 0),
+                roundsPlayed: record.roundsPlayed + (fields.roundsPlayed ?? 0),
+                lastSeen: fields.lastSeen,
+                name: fields.name ?? record.name,
+                steamID: fields.steamID ?? record.steamID
+              }, { transaction: t });
             } else {
               await this.models.PlayerStats.create({ eosID, ...fields }, { transaction: t });
             }
