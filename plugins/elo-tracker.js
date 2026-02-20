@@ -98,7 +98,7 @@ export default class EloTracker extends BasePlugin {
       this.session.startRound(persistedStartTime);
       Logger.verbose('EloTracker', 1, `Restart detected. Resuming round from saved start time: ${new Date(persistedStartTime).toISOString()}`);
       // Immediately populate sessions for currently connected players
-      this.onUpdatedPlayerInfo();
+      await this.onUpdatedPlayerInfo();
     } else {
       // Fresh round
       const now = Date.now();
@@ -252,8 +252,9 @@ export default class EloTracker extends BasePlugin {
     const participants = this.session.endRound(roundEndTime);
 
     // --- Determine outcome ---
-    // SquadJS ROUND_ENDED data.winner contains the winning teamID (1 or 2), or null for draw.
-    const winningTeamID = data?.winner ?? null;
+    // SquadJS ROUND_ENDED data.winner is an object like { team: '1', tickets: 150 }
+    const winningTeamID = data?.winner ? parseInt(data.winner.team, 10) : null;
+    const ticketDiff = Math.abs((data?.winner?.tickets ?? 0) - (data?.loser?.tickets ?? 0));
     const outcome = winningTeamID === 1 ? 'team1win'
                   : winningTeamID === 2 ? 'team2win'
                   : 'draw';
@@ -345,7 +346,7 @@ export default class EloTracker extends BasePlugin {
       await this.db.insertRoundHistory({
         layerName: this.server.currentLayer?.name ?? 'Unknown',
         winningTeamID,
-        ticketDiff: data?.tickets ?? 0,
+        ticketDiff: ticketDiff,
         roundDuration: roundEndTime - this.session.roundStartTime,
         endedAt: roundEndTime,
         playerCount: eligible.length
@@ -364,7 +365,7 @@ export default class EloTracker extends BasePlugin {
         const embed = EloDiscord.buildRoundSummaryEmbed({
           layerName: this.server.currentLayer?.name ?? 'Unknown',
           winningTeamID,
-          ticketDiff: data?.tickets ?? 0,
+          ticketDiff: ticketDiff,
           roundDuration: roundEndTime - this.session.roundStartTime,
           playerCount: eligible.length,
           topMovers: sortedMovers

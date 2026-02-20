@@ -63,6 +63,10 @@ export default class EloDatabase {
             type: Sequelize.STRING,
             allowNull: true
           },
+          discordID: {
+            type: Sequelize.STRING,
+            allowNull: true
+          },
           name: {
             type: Sequelize.STRING,
             allowNull: true

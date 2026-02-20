@@ -308,6 +308,42 @@ export const EloDiscord = {
       }
 
       // --- Public commands (available in both channels) ---
+      if (sub === 'link') {
+        const steamID = args[1];
+
+        if (!steamID || !/^\d{17}$/.test(steamID)) {
+          const replyMsg = await message.reply('⚠️ Invalid SteamID. Please provide your 17-digit SteamID. This message will be deleted in 5 seconds.');
+          setTimeout(() => {
+            message.delete().catch(() => {});
+            replyMsg.delete().catch(() => {});
+          }, 5000);
+          return;
+        }
+
+        try {
+          const player = await this.db.models.PlayerStats.findOne({ where: { steamID } });
+
+          if (!player) {
+            const replyMsg = await message.reply('⚠️ No ELO record found for that SteamID. Make sure you have played at least one round on the server. This message will be deleted in 5 seconds.');
+            setTimeout(() => {
+              message.delete().catch(() => {});
+              replyMsg.delete().catch(() => {});
+            }, 5000);
+            return;
+          }
+
+          await player.update({ discordID: message.author.id });
+
+          await EloDiscord.sendDiscordMessage(message.channel, {
+            embeds: [EloDiscord.buildAdminConfirmEmbed('Account Linked', `Your Discord account is now successfully linked to the ELO record for **${player.name}**.`)]
+          });
+          message.delete().catch(() => {});
+        } catch (err) {
+          await EloDiscord.sendDiscordMessage(message.channel, { embeds: [EloDiscord.buildErrorEmbed('Account Link', err)] });
+        }
+        return;
+      }
+
       if (sub === 'help') {
         const embed = {
           color: 0x3498db,
@@ -316,8 +352,9 @@ export const EloDiscord = {
             {
               name: '🌐 Public Commands',
               value: [
-                '`!elo` — Look up your own ELO rating',
+                '`!elo` — Look up your own linked ELO rating',
                 '`!elo <name | steamID | eosID>` — Look up another player',
+                '`!elo link <SteamID>` — Link your Discord account to your SteamID',
                 '`!elo leaderboard` — Top 20 players by rating',
                 '`!elo help` — Show this message'
               ].join('\n'),
@@ -342,11 +379,9 @@ export const EloDiscord = {
       }
 
       if (!sub || sub === 'me') {
-        const identifier = message.author.username;
-        const player = await this.db.getPlayerStats(identifier) ??
-          (await this._findPlayerByIdentifier(identifier));
+        const player = await this.db.models.PlayerStats.findOne({ where: { discordID: message.author.id } });
         if (!player) {
-          await message.reply('No ELO record found for your account.');
+          await message.reply('No linked ELO record found. Please use `!elo link <Your17DigitSteamID>` to link your account first!');
           return;
         }
         await EloDiscord.sendDiscordMessage(message.channel, { embeds: [EloDiscord.buildPlayerStatsEmbed(player)] });
