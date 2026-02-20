@@ -1,3 +1,56 @@
+/**
+ * ╔═══════════════════════════════════════════════════════════════╗
+ * ║                         ELO DATABASE                          ║
+ * ╚═══════════════════════════════════════════════════════════════╝
+ *
+ * ─── PURPOSE ─────────────────────────────────────────────────────
+ *
+ * SQLite persistence layer for the EloTracker plugin. Manages player
+ * stats, round history, leaderboard queries, and plugin state using
+ * Sequelize ORM injected via the connectors argument.
+ *
+ * ─── EXPORTS ─────────────────────────────────────────────────────
+ *
+ * EloDatabase (default)
+ *   Class. Key public methods:
+ *     initDB()                    — Sync models, seed PluginState row.
+ *     getPlayerStats(eosID)       — Single player lookup by eosID.
+ *     getPlayerStatsBatch(eosIDs) — Bulk lookup; returns a Map.
+ *     searchPlayer(identifier)    — Fuzzy search by eosID/steamID/name.
+ *     upsertPlayerStats(eosID, fields) — Single-record upsert.
+ *     bulkUpsertPlayerStats(updates)   — Batch upsert in one transaction.
+ *     insertRoundHistory(data)    — Append a round record.
+ *     getLeaderboard(limit, minRounds) — Top players by mu.
+ *     getPlayerRank(mu, minRounds)     — Rank of a given mu value.
+ *     exportPlayerStats()         — Full table dump as plain objects.
+ *     importPlayerStats(records)  — Bulk restore from export.
+ *
+ * ─── DEPENDENCIES ────────────────────────────────────────────────
+ *
+ * sequelize (Sequelize)
+ *   ORM for SQLite. Injected via connectors.sqlite — not instantiated
+ *   internally. All three models are defined and synced in initDB().
+ * Logger (../../core/logger.js)
+ *   Verbose error logging on all caught DB exceptions.
+ *
+ * ─── NOTES ───────────────────────────────────────────────────────
+ *
+ * - All operations go through _executeWithRetry() — retries up to 5x
+ *   on SQLITE_BUSY with 200ms + random jitter backoff.
+ * - bulkUpsertPlayerStats() uses INCREMENTAL updates for wins,
+ *   losses, and roundsPlayed (adds to existing). All other fields
+ *   are overwritten. Do not pass already-cumulative totals.
+ * - Models are stored on this.models and referenced externally in
+ *   elo-discord.js (e.g. this.db.models.PlayerStats.destroy).
+ * - Sequelize.BIGINT is used for timestamps to avoid JS integer
+ *   overflow with Unix ms values.
+ *
+ * Author:
+ * Discord: `real_slacker`
+ *
+ * ═══════════════════════════════════════════════════════════════
+ */
+
 import Sequelize from 'sequelize';
 import Logger from '../../core/logger.js';
 

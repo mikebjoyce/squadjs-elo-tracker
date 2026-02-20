@@ -1,3 +1,47 @@
+/**
+ * ╔═══════════════════════════════════════════════════════════════╗
+ * ║                         ELO COMMANDS                          ║
+ * ╚═══════════════════════════════════════════════════════════════╝
+ *
+ * ─── PURPOSE ─────────────────────────────────────────────────────
+ *
+ * Registers in-game chat command handlers onto the EloTracker plugin
+ * instance. Provides a public !elo command and an admin-restricted
+ * !eloadmin command for in-game use.
+ *
+ * ─── EXPORTS ─────────────────────────────────────────────────────
+ *
+ * EloCommands (default)
+ *   Object with a single register(tracker) method. Mutates the
+ *   tracker instance by attaching three methods directly onto it:
+ *     respond(player, msg)       — rcon.warn wrapper with logging.
+ *     onEloCommand(info)         — Handles !elo chat commands.
+ *     onEloAdminCommand(info)    — Handles !eloadmin chat commands.
+ *
+ * ─── DEPENDENCIES ────────────────────────────────────────────────
+ *
+ * Logger (../../core/logger.js)
+ *   Verbose logging for command responses, lookup failures, and
+ *   rcon.warn errors.
+ *
+ * ─── NOTES ───────────────────────────────────────────────────────
+ *
+ * - Methods are attached directly onto the tracker instance, not
+ *   returned as standalone functions. They rely on tracker's
+ *   this.server, this.db, this.session, this.eloCache, this.options.
+ * - onEloAdminCommand enforces ChatAdmin channel restriction
+ *   internally. The caller must still register the event listener.
+ * - !eloadmin reset resets mu, sigma, wins, losses, roundsPlayed
+ *   to defaults. It does NOT delete the DB record.
+ * - !elo with no sub-command falls through to the player lookup
+ *   path using the full args string as the identifier.
+ *
+ * Author:
+ * Discord: `real_slacker`
+ *
+ * ═══════════════════════════════════════════════════════════════
+ */
+
 import Logger from '../../core/logger.js';
 
 const EloCommands = {

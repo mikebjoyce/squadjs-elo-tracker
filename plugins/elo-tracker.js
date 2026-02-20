@@ -1,3 +1,99 @@
+/**
+ * ╔═══════════════════════════════════════════════════════════════╗
+ * ║                      ELO TRACKER PLUGIN                      ║
+ * ╚═══════════════════════════════════════════════════════════════╝
+ *
+ * ─── IN-GAME COMMAND LIST ───────────────────────────────────────
+ *
+ * Public Commands:
+ * !elo                           → Your ELO rating and rank.
+ * !elo <name | steamID>          → Look up another player's rating.
+ * !elo leaderboard               → Top 10 players by rating.
+ * !elo help                      → Show available commands.
+ *
+ * Admin Commands (ChatAdmin only):
+ * !eloadmin status               → Plugin status and current round info.
+ * !eloadmin reset <name|steamID> → Reset a player to default rating.
+ * !eloadmin help                 → Show available commands.
+ *
+ * ─── DISCORD COMMAND LIST ───────────────────────────────────────
+ *
+ * Public Commands (public + admin channel):
+ * !elo                           → Your linked ELO rating and rank.
+ * !elo <name | steamID | eosID>  → Look up another player.
+ * !elo link <SteamID>            → Link your Discord to your SteamID.
+ * !elo leaderboard               → Top 20 players by rating.
+ * !elo explain                   → How the TrueSkill ranking system works.
+ * !elo help                      → Show available commands.
+ *
+ * Admin Commands (admin channel only):
+ * !elo status                    → Plugin status and current round info.
+ * !elo reset                     → Wipe ALL ratings + history (requires confirm).
+ * !elo reset confirm             → Confirm a pending full reset.
+ * !elo reset <name|steamID>      → Reset a single player to default rating.
+ * !elo backup                    → Export all player stats as a JSON attachment.
+ * !elo restore                   → Restore from a JSON backup (attach file).
+ *
+ * ─── CONFIGURATION OPTIONS ──────────────────────────────────────
+ *
+ * Core:
+ * database                       - Sequelize/SQLite connector for persistent storage.
+ * enablePublicIngameCommands     - Enable/disable public !elo in-game commands.
+ *
+ * ELO Algorithm:
+ * defaultMu                      - Default TrueSkill μ for new players.
+ * defaultSigma                   - Default TrueSkill σ for new players.
+ * minParticipationRatio          - Min fraction of round played to earn ELO.
+ *
+ * Eligibility:
+ * minPlayersForElo               - Min server population to run ELO updates.
+ * minRoundsForLeaderboard        - Min rounds played to appear in rankings.
+ * ignoredGameModes               - Game modes excluded from ELO tracking.
+ *
+ * Discord:
+ * discordClient                  - Discord connector for logging.
+ * discordAdminChannelID          - Channel ID for admin round summaries.
+ * discordPublicChannelID         - Channel ID for public-facing output.
+ *
+ * ─── CONFIGURATION EXAMPLE ──────────────────────────────────────
+
+// 1. Add connectors to the "connectors" object in config.json:
+
+"connectors": {
+  "sqlite": {
+    "dialect": "sqlite",
+    "storage": "squad-server.sqlite"
+  },
+  "discord": {
+    "connector": "discord",
+    "token": "YOUR_BOT_TOKEN"
+  }
+},
+
+// 2. Add the plugin configuration to the "plugins" array in config.json:
+
+{
+  "plugin": "EloTracker",
+  "enabled": true,
+  "database": "sqlite",
+  "minParticipationRatio": 0.15,
+  "defaultMu": 25.0,
+  "defaultSigma": 8.333,
+  "minPlayersForElo": 80,
+  "minRoundsForLeaderboard": 10,
+  "ignoredGameModes": ["Seed", "Training"],
+  "enablePublicIngameCommands": true,
+  "discordClient": "discord",
+  "discordAdminChannelID": "",
+  "discordPublicChannelID": ""
+}
+
+ * Author:
+ * Discord: `real_slacker`
+ *
+ * ════════════════════════════════════════════════════════════════
+ */
+
 import BasePlugin from './base-plugin.js';
 import Logger from '../../core/logger.js';
 import EloDatabase from '../utils/elo-database.js';
@@ -8,7 +104,7 @@ import EloCommands from '../utils/elo-commands.js';
 
 export default class EloTracker extends BasePlugin {
   static get version() {
-    return '0.1.0';
+    return '0.2.0';
   }
 
   static get description() {

@@ -1,11 +1,45 @@
 /**
- * EloSessionManager
- * 
- * Pure in-memory session tracking for the EloTracker plugin.
- * Handles player segments, team switches, and participation calculation.
- * 
- * No external dependencies.
+ * ╔═══════════════════════════════════════════════════════════════╗
+ * ║                      ELO SESSION MANAGER                      ║
+ * ╚═══════════════════════════════════════════════════════════════╝
+ *
+ * ─── PURPOSE ─────────────────────────────────────────────────────
+ *
+ * Pure in-memory session tracker for the EloTracker plugin. Records
+ * per-player team segments across a round and computes participation
+ * ratios at round end. No external dependencies.
+ *
+ * ─── EXPORTS ─────────────────────────────────────────────────────
+ *
+ * EloSessionManager (default)
+ *   Class. Key public methods:
+ *     startRound(timestamp)         — Clears state, sets round start.
+ *     updatePlayers(currentPlayers) — Snapshot diff; call periodically.
+ *     endRound(timestamp)           — Closes segments, returns participants.
+ *     getPlayerSession(eosID)       — Returns a single session or null.
+ *     getSessionCount()             — Number of tracked sessions.
+ *     clear()                       — Full reset of all state.
+ *
+ * ─── NOTES ───────────────────────────────────────────────────────
+ *
+ * - Disconnects are intentionally NOT tracked. Segments remain open
+ *   until endRound() closes them. This prevents early-leaver penalty.
+ * - Assigned team = the team the player spent the most time on.
+ *   Defaults to team 1 on a tie or if no time was recorded.
+ * - participationRatio is clamped to [0.0, 1.0]. It represents the
+ *   fraction of total round duration spent on the assigned team.
+ * - updatePlayers() is a snapshot diff — it does not detect leaves.
+ *   Call it on join and team-switch events, not on disconnect.
+ * - Segment objects are shared by reference between session.segments
+ *   and session.activeSegment. Closing activeSegment updates the
+ *   array entry in-place.
+ *
+ * Author:
+ * Discord: `real_slacker`
+ *
+ * ═══════════════════════════════════════════════════════════════
  */
+
 export default class EloSessionManager {
   constructor() {
     // Map<eosID, PlayerSession>

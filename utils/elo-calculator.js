@@ -1,12 +1,43 @@
 /**
- * EloCalculator
- * Pure math module for TrueSkill calculations.
- * Implements the TrueSkill algorithm for team-based games with specific adaptations.
+ * ╔═══════════════════════════════════════════════════════════════╗
+ * ║                        ELO CALCULATOR                         ║
+ * ╚═══════════════════════════════════════════════════════════════╝
  *
- * References:
- * - TrueSkill: Through the Looking Glass (Herbrich et al.)
- * - Abramowitz & Stegun (Error Function approximation)
+ * ─── PURPOSE ─────────────────────────────────────────────────────
+ *
+ * Pure math module implementing the TrueSkill rating algorithm for
+ * team-based games. Computes per-player mu/sigma deltas for win,
+ * loss, and draw outcomes. No external dependencies.
+ *
+ * ─── EXPORTS ─────────────────────────────────────────────────────
+ *
+ * EloCalculator (default)
+ *   Static-only class. All methods and constants are static.
+ *   computeTeamUpdate(team1, team2, outcome)
+ *     Core update method — returns raw deltaMu/deltaSigma per player.
+ *   getDefaultRating()
+ *     Returns the default { mu, sigma } for a new player.
+ *   BETA, DRAW_PROBABILITY
+ *     Configurable static constants exposed for external tuning.
+ *
+ * ─── NOTES ───────────────────────────────────────────────────────
+ *
+ * - erf uses Abramowitz & Stegun 7.1.26; erfInv uses the Winitzki
+ *   approximation. Both are fast and accurate enough for TrueSkill.
+ * - computeTeamUpdate() returns RAW deltas. The caller must scale by
+ *   participationRatio before writing to the database.
+ * - deltaSigma is a REDUCTION value. It is applied as:
+ *     newSigma = sigma - deltaSigma
+ *   Do NOT change the subtraction to addition.
+ * - c === 0 guard prevents a divide-by-zero when all players have
+ *   zero sigma and BETA is also zero (edge case, should not occur).
+ *
+ * Author:
+ * Discord: `real_slacker`
+ *
+ * ═══════════════════════════════════════════════════════════════
  */
+
 export default class EloCalculator {
   // Constants
   static MU_DEFAULT = 25.0;

@@ -1,3 +1,60 @@
+/**
+ * ╔═══════════════════════════════════════════════════════════════╗
+ * ║                          ELO DISCORD                          ║
+ * ╚═══════════════════════════════════════════════════════════════╝
+ *
+ * ─── PURPOSE ─────────────────────────────────────────────────────
+ *
+ * Discord interface module for the EloTracker plugin. Provides embed
+ * builders for all Discord-facing output, a resilient send helper,
+ * and registers the !elo Discord command handler onto the tracker.
+ *
+ * ─── EXPORTS ─────────────────────────────────────────────────────
+ *
+ * EloDiscord (named)
+ *   Object. Key members:
+ *     sendDiscordMessage(channel, content, suppressErrors)
+ *       Resilient send — normalises embed/embeds, handles 429 with
+ *       one automatic retry, and includes a Discord.js v12 fallback.
+ *     buildRoundSummaryEmbed(data)   — Post-round results embed.
+ *     buildPlayerStatsEmbed(...)     — Per-player rank and stats embed.
+ *     buildLeaderboardEmbed(...)     — Top-N leaderboard embed.
+ *     buildAdminConfirmEmbed(...)    — Admin action confirmation embed.
+ *     buildErrorEmbed(context, err)  — Error embed with stack trace.
+ *     buildRoundSkippedEmbed(...)    — Round-skipped notification embed.
+ *     registerDiscordCommands(tracker)
+ *       Attaches onDiscordMessage and _findPlayerByIdentifier onto
+ *       the tracker instance.
+ *
+ * ─── DEPENDENCIES ────────────────────────────────────────────────
+ *
+ * Logger (../../core/logger.js)
+ *   Verbose logging for send failures and rate-limit events.
+ *
+ * ─── NOTES ───────────────────────────────────────────────────────
+ *
+ * - sendDiscordMessage normalises { embed } -> { embeds: [embed] }
+ *   for Discord.js v13+ compatibility, then falls back to the legacy
+ *   { embed } shape on a 'Cannot send an empty message' error.
+ * - Rate limit (429) handling reads retryAfter from the error object
+ *   or the retry-after header. Only one retry is attempted.
+ * - registerDiscordCommands() mutates the tracker instance. It relies
+ *   on tracker's this.db, this.session, this.eloCache, this.options,
+ *   this.discordAdminChannel, and this.discordPublicChannel.
+ * - Admin commands (!elo reset, backup, restore, status) are gated to
+ *   the configured discordAdminChannelID. Public commands are gated
+ *   to discordPublicChannelID. Messages outside both channels are
+ *   silently ignored.
+ * - !elo reset (full wipe) requires a two-step confirm with a 30s
+ *   timeout. Pending state is stored on tracker._resetConfirmPending.
+ * - formatDuration is a local helper (not exported).
+ *
+ * Author:
+ * Discord: `real_slacker`
+ *
+ * ═══════════════════════════════════════════════════════════════
+ */
+
 import Logger from '../../core/logger.js';
 
 const formatDuration = (ms) => {
@@ -260,6 +317,30 @@ export const EloDiscord = {
 
       // --- Admin-only commands (admin channel only, checked first) ---
       if (isAdminChannel) {
+        if (sub === 'status') {
+          const sessionCount = this.session.getSessionCount();
+          const cacheCount = this.eloCache.size;
+          const roundStartStr = this.session.roundStartTime
+            ? new Date(this.session.roundStartTime).toISOString()
+            : 'None';
+
+          const embed = {
+            color: 0x3498db,
+            title: '📊 EloTracker Status',
+            fields: [
+              { name: 'Version', value: this.constructor.version, inline: true },
+              { name: 'Ready', value: this.ready.toString(), inline: true },
+              { name: 'Session Players', value: sessionCount.toString(), inline: true },
+              { name: 'ELO Cache Entries', value: cacheCount.toString(), inline: true },
+              { name: 'Round Start', value: roundStartStr, inline: true }
+            ],
+            timestamp: new Date().toISOString()
+          };
+
+          await EloDiscord.sendDiscordMessage(message.channel, { embeds: [embed] });
+          return;
+        }
+
         if (sub === 'reset') {
           const identifier = args.slice(1).join(' ');
 
