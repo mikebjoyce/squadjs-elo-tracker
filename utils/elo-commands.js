@@ -23,6 +23,7 @@ const EloCommands = {
     // Available to all players in any chat channel
     tracker.onEloCommand = async function(info) {
       if (!this.ready) return;
+      if (this.options.enablePublicIngameCommands === false) return;
 
       const args = (info.message || '')
         .replace(/^!elo\s*/i, '')
