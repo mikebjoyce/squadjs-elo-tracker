@@ -31,6 +31,7 @@ export default class EloTracker extends BasePlugin {
       defaultMu: { default: 25.0, type: 'number' },
       defaultSigma: { default: 8.333, type: 'number' },
       minPlayersForElo: { default: 80, type: 'number' },
+      minRoundsForLeaderboard: { default: 10, type: 'number' },
       ignoredGameModes: { default: ['Seed', 'Training'], type: 'array' },
       discordClient: {
         required: false,

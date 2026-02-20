@@ -46,7 +46,7 @@ const EloCommands = {
       // !elo leaderboard
       if (sub === 'leaderboard') {
         try {
-          const players = await this.db.getLeaderboard(10);
+          const players = await this.db.getLeaderboard(10, this.options.minRoundsForLeaderboard);
           if (!players.length) {
             return await this.respond(player, 'No leaderboard data yet.');
           }
@@ -67,8 +67,20 @@ const EloCommands = {
         if (!record) {
           return await this.respond(player, `No ELO record found for: ${identifier}`);
         }
+
+        const minRounds = this.options.minRoundsForLeaderboard;
+        let rankLine;
+        if (record.roundsPlayed < minRounds) {
+          rankLine = `Rank: Provisional — ${record.roundsPlayed}/${minRounds} rounds`;
+        } else {
+          const rank = await this.db.getPlayerRank(record.mu, minRounds);
+          const total = await this.db.getTotalPlayers();
+          rankLine = `Rank: #${rank} (of ${total} total)`;
+        }
+
         return await this.respond(player, [
           `=== ${record.name} ===`,
+          rankLine,
           `Rating: μ ${record.mu.toFixed(2)} ± σ ${record.sigma.toFixed(2)}`,
           `Record: ${record.wins}W / ${record.losses}L (${record.roundsPlayed} rounds)`
         ].join('\n'));

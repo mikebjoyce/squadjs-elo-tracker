@@ -105,16 +105,16 @@ export const EloDiscord = {
     };
   },
 
-  buildPlayerStatsEmbed(player, rank, totalPlayers) {
-    const { name, mu, sigma, wins, losses, lastSeen } = player;
+  buildPlayerStatsEmbed(player, rank, totalPlayers, provisional = false) {
+    const { name, mu, sigma, wins, losses, roundsPlayed } = player;
 
-    let lastSeenStr = 'Never';
-    if (lastSeen) {
-      const unixTime = Math.floor(lastSeen / 1000);
-      lastSeenStr = `<t:${unixTime}:f> (<t:${unixTime}:R>)`;
+    let topPercent;
+    if (!provisional) {
+      const rawPercent = ((rank - 1) / (totalPlayers > 1 ? totalPlayers - 1 : 1)) * 100;
+      if (rank === 1) topPercent = '0.1';
+      else if (rawPercent < 1) topPercent = Math.max(0.1, rawPercent).toFixed(1);
+      else topPercent = Math.round(rawPercent);
     }
-
-    const topPercent = Math.max(1, Math.round(((rank - 1) / (totalPlayers > 1 ? totalPlayers - 1 : 1)) * 100) || 1);
 
     let reliability;
     if (sigma <= 2.5) reliability = 'Highly Calibrated';
@@ -125,26 +125,27 @@ export const EloDiscord = {
     const totalGames = wins + losses;
     const winRateStr = totalGames > 0 ? `**${((wins / totalGames) * 100).toFixed(1)}% winrate**` : null;
     const matchHistoryValue = [
-      `${wins} wins`,
-      `${losses} losses`,
-      `${totalGames} total rounds`,
+      `${wins} Wins / ${losses} Losses`,
       winRateStr
     ].filter(Boolean).join('\n');
+
+    const description = provisional
+      ? `**Provisional** — ${roundsPlayed} rounds played. Rank visible after ${totalPlayers} rounds.`
+      : (totalPlayers > 0 ? `Rank **#${rank}** of **${totalPlayers}** players.` : 'Unranked');
+
+    const skillRatingValue = provisional
+      ? `**${mu.toFixed(2)} μ** (Calibrating...)`
+      : `**${mu.toFixed(2)} μ** (Top ${topPercent}% of players)`;
 
     return {
       color: 0x3498db,
       title: `📊 Player Stats for ${name}`,
-      description: totalPlayers > 0 ? `Rank **#${rank}** of **${totalPlayers}** players.` : 'Unranked',
+      description: description,
       fields: [
         {
           name: 'Skill Rating',
-          value: `**${mu.toFixed(2)} μ** (Top ${topPercent}% of players)`,
-          inline: true
-        },
-        {
-          name: 'Reliability',
-          value: `${reliability} (σ ${sigma.toFixed(2)})`,
-          inline: true
+          value: skillRatingValue,
+          inline: false
         },
         {
           name: 'Match History',
@@ -152,8 +153,8 @@ export const EloDiscord = {
           inline: false
         },
         {
-          name: 'Last Seen',
-          value: lastSeenStr,
+          name: 'Reliability',
+          value: `${reliability} (σ ${sigma.toFixed(2)})`,
           inline: false
         },
         {
@@ -373,10 +374,12 @@ export const EloDiscord = {
       }
 
       if (sub === 'explain') {
+        const initialMu = this.options.defaultMu;
+        const initialSigma = this.options.defaultSigma;
         const explainEmbed = {
           color: 0x3498db,
           title: '📖 How the ELO System Works',
-          description: 'This server uses a system based on **TrueSkill** to rank players. Here’s a quick breakdown:',
+          description: 'This server uses a system based on [TrueSkill](https://en.wikipedia.org/wiki/TrueSkill) to rank players. Here’s a quick breakdown:',
           fields: [
             {
               name: 'TrueSkill Algorithm',
@@ -384,15 +387,15 @@ export const EloDiscord = {
             },
             {
               name: 'Skill (μ — "Mu")',
-              value: 'Your estimated performance level. This number goes up when you win and down when you lose.'
+              value: `Your estimated performance level. Everyone starts at ${initialMu}. This number goes up when you win and decreases when you lose based on the strength of your opponents.`
             },
             {
               name: 'Reliability (σ — "Sigma")',
-              value: "This is the system's confidence in your skill rating. It starts high and drops as you play more games, making your rank more stable."
+              value: `This is the system's confidence in your skill rating. It starts at ${initialSigma} and drops as you play more games, making your rank more stable.`
             },
             {
-              name: 'Purpose',
-              value: 'The main goal is to use these ratings to balance teams fairly, creating more competitive and enjoyable rounds for everyone.'
+              name: 'The Calibration Goal',
+              value: "Once your Sigma drops below 2.5, you are considered 'Highly Calibrated' and your rank becomes more stable."
             }
           ]
         };
@@ -441,9 +444,12 @@ export const EloDiscord = {
           await message.reply('No linked ELO record found. Please use `!elo link <Your17DigitSteamID>` to link your account first!');
           return;
         }
-        const rank = await this.db.getPlayerRank(player.mu);
-        const totalPlayers = await this.db.getTotalPlayers();
-        await EloDiscord.sendDiscordMessage(message.channel, { embeds: [EloDiscord.buildPlayerStatsEmbed(player, rank, totalPlayers)] });
+
+        const minRounds = this.options.minRoundsForLeaderboard;
+        const provisional = player.roundsPlayed < minRounds;
+        const rank = provisional ? null : await this.db.getPlayerRank(player.mu, minRounds);
+        const totalPlayers = provisional ? minRounds : await this.db.getTotalPlayers();
+        await EloDiscord.sendDiscordMessage(message.channel, { embeds: [EloDiscord.buildPlayerStatsEmbed(player, rank, totalPlayers, provisional)] });
         return;
       }
 
@@ -460,9 +466,12 @@ export const EloDiscord = {
         await message.reply(`No ELO record found for: ${identifier}`);
         return;
       }
-      const rank = await this.db.getPlayerRank(player.mu);
-      const totalPlayers = await this.db.getTotalPlayers();
-      await EloDiscord.sendDiscordMessage(message.channel, { embeds: [EloDiscord.buildPlayerStatsEmbed(player, rank, totalPlayers)] });
+
+      const minRounds = this.options.minRoundsForLeaderboard;
+      const provisional = player.roundsPlayed < minRounds;
+      const rank = provisional ? null : await this.db.getPlayerRank(player.mu, minRounds);
+      const totalPlayers = provisional ? minRounds : await this.db.getTotalPlayers();
+      await EloDiscord.sendDiscordMessage(message.channel, { embeds: [EloDiscord.buildPlayerStatsEmbed(player, rank, totalPlayers, provisional)] });
     };
 
     tracker._findPlayerByIdentifier = async function(identifier) {

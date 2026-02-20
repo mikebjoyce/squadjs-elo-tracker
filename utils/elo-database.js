@@ -311,11 +311,16 @@ export default class EloDatabase {
     }
   }
 
-  async getLeaderboard(limit = 20) {
+  async getLeaderboard(limit = 20, minRounds = 10) {
     if (!this.sequelize) return [];
     try {
       return await this._executeWithRetry(async () => {
         const records = await this.models.PlayerStats.findAll({
+          where: {
+            roundsPlayed: {
+              [Sequelize.Op.gte]: minRounds
+            }
+          },
           order: [['mu', 'DESC']],
           limit: limit
         });
@@ -327,15 +332,14 @@ export default class EloDatabase {
     }
   }
 
-  async getPlayerRank(mu) {
+  async getPlayerRank(mu, minRounds = 0) {
     if (!this.sequelize) return 0;
     try {
       return await this._executeWithRetry(async () => {
         const higherRanked = await this.models.PlayerStats.count({
           where: {
-            mu: {
-              [Sequelize.Op.gt]: mu
-            }
+            mu: { [Sequelize.Op.gt]: mu },
+            ...(minRounds > 0 && { roundsPlayed: { [Sequelize.Op.gte]: minRounds } })
           }
         });
         return higherRanked + 1;

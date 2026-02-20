@@ -210,7 +210,7 @@ export default class EloCalculator {
       // deltaMu:
       // Win/loss: same v(t_winner) magnitude for both teams. Sign flipped for loser.
       // Draw: vDraw(t) handles sign internally — negative for higher-ranked team.
-      let deltaMu = (sigmaPlusBetaSq / c) * vVal;
+      let deltaMu = (sigmaSq / c) * vVal;
 
       if (outcome !== 'draw') {
         // Winner gets +deltaMu, loser gets -deltaMu.
@@ -220,20 +220,22 @@ export default class EloCalculator {
       // For draws: vDraw returns negative for higher-ranked team automatically.
       // No manual sign flip needed.
 
-      // deltaSigma (factor) = (sigma_i² + beta²) / c² * w(t, epsilon/c)
-      const deltaSigmaFactor = (sigmaPlusBetaSq / (c * c)) * wVal;
+      // deltaSigma (factor) = (sigma_i²) / c² * w(t, epsilon/c)
+      const deltaSigmaFactor = (sigmaSq / (c * c)) * wVal;
       // Clamp to prevent negative value inside sqrt if wVal is unexpectedly large.
       const safeDeltaSigmaFactor = Math.min(deltaSigmaFactor, 1 - 1e-10);
 
-      // newSigma_i = sqrt( (sigma_i² + beta²) * (1 - deltaSigma) + tau² )
-      const newSigma = Math.sqrt(sigmaPlusBetaSq * (1 - safeDeltaSigmaFactor) + this.TAU * this.TAU);
+      // newSigma_i = sqrt( (sigma_i²) * (1 - deltaSigma) + tau² )
+      const newSigma = Math.sqrt(sigmaSq * (1 - safeDeltaSigmaFactor) + this.TAU * this.TAU);
 
       // Return raw deltas (unscaled — caller applies participationRatio before writing to DB).
       // Positive deltaMu = rating increase.
       // deltaSigma = player.sigma - newSigma.
       //   Positive value means sigma DECREASED (more confident).
-      //   Caller must apply as: newSigma = player.sigma - (deltaSigma * participationRatio)
-      //   NOT as: newSigma = player.sigma + deltaSigma
+      //   Applied in elo-tracker.js as:
+      //     const scaledDeltaSigma = deltaSigma * participationRatio;
+      //     const newSigma = Math.max(rating.sigma - scaledDeltaSigma, 0.5);
+      //   Subtraction is intentional — do NOT change to addition.
       return {
         deltaMu: deltaMu,
         deltaSigma: player.sigma - newSigma

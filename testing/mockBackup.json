@@ -1,6 +1,6 @@
 {
   "exportedAt": 1706832000000,
-  "playerCount": 25,
+  "playerCount": 50,
   "players": [
     {
       "steamID": "76561197975565148",
@@ -276,6 +276,293 @@
       "losses": 108,
       "roundsPlayed": 160,
       "name": "Driver_Main"
+    }
+    ,
+    {
+      "steamID": "76561200300000001",
+      "eosID": "2x34a6d28b999444404151683d8d9z4d",
+      "discordID": null,
+      "mu": 24.8,
+      "sigma": 8.33,
+      "wins": 0,
+      "losses": 1,
+      "roundsPlayed": 1,
+      "name": "Blueberry"
+    },
+    {
+      "steamID": "76561200300000002",
+      "eosID": "3y45b7e39c000555515262794e9e0a5e",
+      "discordID": null,
+      "mu": 25.1,
+      "sigma": 8.3,
+      "wins": 1,
+      "losses": 1,
+      "roundsPlayed": 2,
+      "name": "FNG"
+    },
+    {
+      "steamID": "76561200300000003",
+      "eosID": "4z56c8f40d111666626373805f0f1b6f",
+      "discordID": null,
+      "mu": 23.5,
+      "sigma": 8.15,
+      "wins": 1,
+      "losses": 3,
+      "roundsPlayed": 4,
+      "name": "NoMicNate"
+    },
+    {
+      "steamID": "76561200300000004",
+      "eosID": "5a67d9g51e222777737484916g1g2c7g",
+      "discordID": null,
+      "mu": 24,
+      "sigma": 7.9,
+      "wins": 2,
+      "losses": 5,
+      "roundsPlayed": 7,
+      "name": "Lost_and_Confused"
+    },
+    {
+      "steamID": "76561200300000005",
+      "eosID": "6b78e0h62f333888848595027h2h3d8h",
+      "discordID": null,
+      "mu": 27.2,
+      "sigma": 7.5,
+      "wins": 6,
+      "losses": 3,
+      "roundsPlayed": 9,
+      "name": "TeamPlayer_Tom"
+    },
+    {
+      "steamID": "76561200300000006",
+      "eosID": "7c89f1i73g444999959606138i3i4e9i",
+      "discordID": null,
+      "mu": 24.9,
+      "sigma": 7.2,
+      "wins": 5,
+      "losses": 6,
+      "roundsPlayed": 11,
+      "name": "Average_Joe"
+    },
+    {
+      "steamID": "76561200300000007",
+      "eosID": "8d90g2j84h555000060717249j4j5f0j",
+      "discordID": null,
+      "mu": 30.5,
+      "sigma": 3.1,
+      "wins": 60,
+      "losses": 51,
+      "roundsPlayed": 111,
+      "name": "Salty_Vet"
+    },
+    {
+      "steamID": "76561200300000008",
+      "eosID": "9e01h3k95i666111171828350k5k6g1k",
+      "discordID": null,
+      "mu": 21.8,
+      "sigma": 5.8,
+      "wins": 10,
+      "losses": 23,
+      "roundsPlayed": 33,
+      "name": "Cpt_Clueless"
+    },
+    {
+      "steamID": "76561200300000009",
+      "eosID": "0f12i4l06j777222282939461l6l7h2l",
+      "discordID": null,
+      "mu": 32.1,
+      "sigma": 4.9,
+      "wins": 30,
+      "losses": 18,
+      "roundsPlayed": 48,
+      "name": "Rambo_Reborn"
+    },
+    {
+      "steamID": "76561200300000010",
+      "eosID": "1g23j5m17k888333393040572m7m8i3m",
+      "discordID": null,
+      "mu": 36.3,
+      "sigma": 3.5,
+      "wins": 55,
+      "losses": 27,
+      "roundsPlayed": 82,
+      "name": "The_Strategist"
+    },
+    {
+      "steamID": "76561200300000011",
+      "eosID": "2h34k6n28l999444404151683n8n9j4n",
+      "discordID": null,
+      "mu": 19.5,
+      "sigma": 4.2,
+      "wins": 25,
+      "losses": 40,
+      "roundsPlayed": 65,
+      "name": "Cannon_Fodder"
+    },
+    {
+      "steamID": "76561200300000012",
+      "eosID": "3i45l7o39m000555515262794o9o0k5o",
+      "discordID": null,
+      "mu": 39.8,
+      "sigma": 2.5,
+      "wins": 80,
+      "losses": 50,
+      "roundsPlayed": 130,
+      "name": "One_Man_Army"
+    },
+    {
+      "steamID": "76561200300000013",
+      "eosID": "4j56m8p40n111666626373805p0p1l6p",
+      "discordID": null,
+      "mu": 23.1,
+      "sigma": 6.4,
+      "wins": 8,
+      "losses": 13,
+      "roundsPlayed": 21,
+      "name": "FriendlyFireFred"
+    },
+    {
+      "steamID": "76561200300000014",
+      "eosID": "5k67n9q51o222777737484916q1q2m7q",
+      "discordID": null,
+      "mu": 28.8,
+      "sigma": 3.3,
+      "wins": 50,
+      "losses": 45,
+      "roundsPlayed": 95,
+      "name": "Ace_Pilot"
+    },
+    {
+      "steamID": "76561200300000015",
+      "eosID": "6l78o0r62p333888848595027r2r3n8r",
+      "discordID": null,
+      "mu": 31.9,
+      "sigma": 3.8,
+      "wins": 45,
+      "losses": 32,
+      "roundsPlayed": 77,
+      "name": "Tank_Hunter"
+    },
+    {
+      "steamID": "76561200300000016",
+      "eosID": "7m89p1s73q444999959606138s3s4o9s",
+      "discordID": null,
+      "mu": 41.5,
+      "sigma": 2.2,
+      "wins": 105,
+      "losses": 50,
+      "roundsPlayed": 155,
+      "name": "Pro_Gamer"
+    },
+    {
+      "steamID": "76561200300000017",
+      "eosID": "8n90q2t84r555000060717249t4t5p0t",
+      "discordID": null,
+      "mu": 18,
+      "sigma": 4.8,
+      "wins": 15,
+      "losses": 35,
+      "roundsPlayed": 50,
+      "name": "Potato_Aim"
+    },
+    {
+      "steamID": "76561200300000018",
+      "eosID": "9o01r3u95s666111171828350u5u6q1u",
+      "discordID": null,
+      "mu": 25.4,
+      "sigma": 8.32,
+      "wins": 1,
+      "losses": 0,
+      "roundsPlayed": 1,
+      "name": "Leeroy_Jenkins"
+    },
+    {
+      "steamID": "76561200300000019",
+      "eosID": "0p12s4v06t777222282939461v6v7r2v",
+      "discordID": null,
+      "mu": 25,
+      "sigma": 7.8,
+      "wins": 4,
+      "losses": 4,
+      "roundsPlayed": 8,
+      "name": "Silent_Shadow"
+    },
+    {
+      "steamID": "76561200300000020",
+      "eosID": "1q23t5w17u888333393040572w7w8s3w",
+      "discordID": null,
+      "mu": 24.5,
+      "sigma": 2.9,
+      "wins": 60,
+      "losses": 65,
+      "roundsPlayed": 125,
+      "name": "The_Wall"
+    },
+    {
+      "steamID": "76561200300000021",
+      "eosID": "2r34u6x28v999444404151683x8x9t4x",
+      "discordID": null,
+      "mu": 25,
+      "sigma": 7,
+      "wins": 7,
+      "losses": 7,
+      "roundsPlayed": 14,
+      "name": "Just_Vibing"
+    },
+    {
+      "steamID": "76561200300000022",
+      "eosID": "3s45v7y39w000555515262794y9y0u5y",
+      "discordID": null,
+      "mu": 29.1,
+      "sigma": 6.1,
+      "wins": 18,
+      "losses": 10,
+      "roundsPlayed": 28,
+      "name": "Map_Reader"
+    },
+    {
+      "steamID": "76561200300000023",
+      "eosID": "4t56w8z40x111666626373805z0z1v6z",
+      "discordID": null,
+      "mu": 26.7,
+      "sigma": 5.4,
+      "wins": 22,
+      "losses": 19,
+      "roundsPlayed": 41,
+      "name": "Lone_Wolf"
+    },
+    {
+      "steamID": "76561200300000024",
+      "eosID": "5u67x9a51y222777737484916a1a2w7a",
+      "discordID": null,
+      "mu": 17.1,
+      "sigma": 3.9,
+      "wins": 20,
+      "losses": 53,
+      "roundsPlayed": 73,
+      "name": "Bad_Luck_Brian"
+    },
+    {
+      "steamID": "76561200300000025",
+      "eosID": "6v78y0b62z333888848595027b2b3x8b",
+      "discordID": null,
+      "mu": 44,
+      "sigma": 2,
+      "wins": 120,
+      "losses": 60,
+      "roundsPlayed": 180,
+      "name": "God_Tier_SL"
+    },
+    {
+      "steamID": "16561200300000002",
+      "eosID": "0y45b7e39c000555515262794e9e0a5e",
+      "discordID": null,
+      "mu": 100,
+      "sigma": 8.3,
+      "wins": 4,
+      "losses": 0,
+      "roundsPlayed": 2,
+      "name": "Lucky"
     }
   ]
 }
