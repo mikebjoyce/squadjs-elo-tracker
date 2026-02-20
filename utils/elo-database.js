@@ -327,6 +327,41 @@ export default class EloDatabase {
     }
   }
 
+  async getPlayerRank(mu) {
+    if (!this.sequelize) return 0;
+    try {
+      return await this._executeWithRetry(async () => {
+        const higherRanked = await this.models.PlayerStats.count({
+          where: {
+            mu: {
+              [Sequelize.Op.gt]: mu
+            }
+          }
+        });
+        return higherRanked + 1;
+      });
+    } catch (error) {
+      Logger.verbose('EloTracker', 1, `[DB] Error fetching player rank for mu ${mu}: ${error.message}`);
+      return 0;
+    }
+  }
+
+  async getTotalPlayers() {
+    if (!this.sequelize) return 0;
+    try {
+      return await this._executeWithRetry(async () => {
+        return await this.models.PlayerStats.count();
+      });
+    } catch (error) {
+      Logger.verbose(
+        'EloTracker',
+        1,
+        `[DB] Error fetching total players: ${error.message}`
+      );
+      return 0;
+    }
+  }
+
   async exportPlayerStats() {
     if (!this.sequelize) return [];
     try {

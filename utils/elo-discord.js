@@ -105,8 +105,8 @@ export const EloDiscord = {
     };
   },
 
-  buildPlayerStatsEmbed(player) {
-    const { name, mu, sigma, wins, losses, roundsPlayed, lastSeen } = player;
+  buildPlayerStatsEmbed(player, rank, totalPlayers) {
+    const { name, mu, sigma, wins, losses, lastSeen } = player;
 
     let lastSeenStr = 'Never';
     if (lastSeen) {
@@ -114,23 +114,51 @@ export const EloDiscord = {
       lastSeenStr = `<t:${unixTime}:f> (<t:${unixTime}:R>)`;
     }
 
+    const topPercent = Math.max(1, Math.round(((rank - 1) / (totalPlayers > 1 ? totalPlayers - 1 : 1)) * 100) || 1);
+
+    let reliability;
+    if (sigma <= 2.5) reliability = 'Highly Calibrated';
+    else if (sigma <= 4.5) reliability = 'Calibrated';
+    else if (sigma <= 6.5) reliability = 'Establishing';
+    else reliability = 'Initial Calibration';
+
+    const totalGames = wins + losses;
+    const winRateStr = totalGames > 0 ? `**${((wins / totalGames) * 100).toFixed(1)}% winrate**` : null;
+    const matchHistoryValue = [
+      `${wins} wins`,
+      `${losses} losses`,
+      `${totalGames} total rounds`,
+      winRateStr
+    ].filter(Boolean).join('\n');
+
     return {
       color: 0x3498db,
-      title: `📊 Player Stats: ${name}`,
+      title: `📊 Player Stats for ${name}`,
+      description: totalPlayers > 0 ? `Rank **#${rank}** of **${totalPlayers}** players.` : 'Unranked',
       fields: [
         {
-          name: 'Rating',
-          value: `**μ = ${mu.toFixed(2)}** ± σ ${sigma.toFixed(2)}`,
-          inline: false
+          name: 'Skill Rating',
+          value: `**${mu.toFixed(2)} μ** (Top ${topPercent}% of players)`,
+          inline: true
         },
         {
-          name: 'Record',
-          value: `Wins: ${wins} | Losses: ${losses} | Total: ${roundsPlayed}`,
+          name: 'Reliability',
+          value: `${reliability} (σ ${sigma.toFixed(2)})`,
+          inline: true
+        },
+        {
+          name: 'Match History',
+          value: matchHistoryValue,
           inline: false
         },
         {
           name: 'Last Seen',
           value: lastSeenStr,
+          inline: false
+        },
+        {
+          name: 'Glossary',
+          value: 'μ (Mu) = Skill Level | σ (Sigma) = Uncertainty',
           inline: false
         }
       ],
@@ -344,6 +372,34 @@ export const EloDiscord = {
         return;
       }
 
+      if (sub === 'explain') {
+        const explainEmbed = {
+          color: 0x3498db,
+          title: '📖 How the ELO System Works',
+          description: 'This server uses a system based on **TrueSkill** to rank players. Here’s a quick breakdown:',
+          fields: [
+            {
+              name: 'TrueSkill Algorithm',
+              value: 'A rating system used by major platforms (like Xbox) to track your skill (μ) and uncertainty (σ) in team games.'
+            },
+            {
+              name: 'Skill (μ — "Mu")',
+              value: 'Your estimated performance level. This number goes up when you win and down when you lose.'
+            },
+            {
+              name: 'Reliability (σ — "Sigma")',
+              value: "This is the system's confidence in your skill rating. It starts high and drops as you play more games, making your rank more stable."
+            },
+            {
+              name: 'Purpose',
+              value: 'The main goal is to use these ratings to balance teams fairly, creating more competitive and enjoyable rounds for everyone.'
+            }
+          ]
+        };
+        await EloDiscord.sendDiscordMessage(message.channel, { embeds: [explainEmbed] });
+        return;
+      }
+
       if (sub === 'help') {
         const embed = {
           color: 0x3498db,
@@ -356,6 +412,7 @@ export const EloDiscord = {
                 '`!elo <name | steamID | eosID>` — Look up another player',
                 '`!elo link <SteamID>` — Link your Discord account to your SteamID',
                 '`!elo leaderboard` — Top 20 players by rating',
+                '`!elo explain` — Explains the ranking algorithm and symbols',
                 '`!elo help` — Show this message'
               ].join('\n'),
               inline: false
@@ -384,7 +441,9 @@ export const EloDiscord = {
           await message.reply('No linked ELO record found. Please use `!elo link <Your17DigitSteamID>` to link your account first!');
           return;
         }
-        await EloDiscord.sendDiscordMessage(message.channel, { embeds: [EloDiscord.buildPlayerStatsEmbed(player)] });
+        const rank = await this.db.getPlayerRank(player.mu);
+        const totalPlayers = await this.db.getTotalPlayers();
+        await EloDiscord.sendDiscordMessage(message.channel, { embeds: [EloDiscord.buildPlayerStatsEmbed(player, rank, totalPlayers)] });
         return;
       }
 
@@ -401,7 +460,9 @@ export const EloDiscord = {
         await message.reply(`No ELO record found for: ${identifier}`);
         return;
       }
-      await EloDiscord.sendDiscordMessage(message.channel, { embeds: [EloDiscord.buildPlayerStatsEmbed(player)] });
+      const rank = await this.db.getPlayerRank(player.mu);
+      const totalPlayers = await this.db.getTotalPlayers();
+      await EloDiscord.sendDiscordMessage(message.channel, { embeds: [EloDiscord.buildPlayerStatsEmbed(player, rank, totalPlayers)] });
     };
 
     tracker._findPlayerByIdentifier = async function(identifier) {
