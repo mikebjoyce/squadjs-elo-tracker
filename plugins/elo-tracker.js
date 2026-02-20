@@ -504,4 +504,11 @@ export default class EloTracker extends BasePlugin {
     };
   }
 
+  async getRatingsByEosIDs(eosIDs) {
+    const results = await this.db.getPlayerStatsBatch(eosIDs);
+    return new Map(eosIDs.map(id => [
+        id,
+        results.get(id) ?? { mu: this.options.defaultMu, sigma: this.options.defaultSigma }
+    ]));
+  }
 }
