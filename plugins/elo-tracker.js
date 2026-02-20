@@ -398,136 +398,131 @@ export default class EloTracker extends BasePlugin {
     const args = content.replace(/^!elo\s*/i, '').trim().split(/\s+/).filter(Boolean);
     const sub = args[0]?.toLowerCase();
 
-    // --- Public commands ---
-    if (isPublicChannel || isAdminChannel) {
-      if (!sub || sub === 'me') {
-        // Look up by author name match against server.players, then fall back to DB
-        const identifier = message.author.username;
-        const player = await this.db.getPlayerStats(identifier) ??
-          (await this._findPlayerByIdentifier(identifier));
-        if (!player) {
-          await message.reply('No ELO record found for your account.');
+    // --- Admin-only commands (admin channel only, checked first) ---
+    if (isAdminChannel) {
+      if (sub === 'reset') {
+        const identifier = args.slice(1).join(' ');
+
+        if (!identifier) {
+          await message.reply('⚠️ This will wipe ALL ELO ratings and round history. Reply `!elo reset confirm` within 30 seconds to proceed.');
+          this._resetConfirmPending = { timestamp: Date.now() };
           return;
         }
-        await EloDiscord.sendDiscordMessage(message.channel, { embeds: [EloDiscord.buildPlayerStatsEmbed(player)] });
+
+        if (identifier === 'confirm') {
+          if (!this._resetConfirmPending || Date.now() - this._resetConfirmPending.timestamp > 30000) {
+            await message.reply('⚠️ No pending reset confirmation, or confirmation expired.');
+            this._resetConfirmPending = null;
+            return;
+          }
+          this._resetConfirmPending = null;
+          try {
+            await this.db.models.PlayerStats.destroy({ where: {} });
+            await this.db.models.RoundHistory.destroy({ where: {} });
+            this.eloCache.clear();
+            await EloDiscord.sendDiscordMessage(message.channel, { embeds: [EloDiscord.buildAdminConfirmEmbed('ELO Reset', 'All ratings and round history wiped.')] });
+          } catch (err) {
+            await EloDiscord.sendDiscordMessage(message.channel, { embeds: [EloDiscord.buildErrorEmbed('ELO Reset', err)] });
+          }
+          return;
+        }
+
+        // Single player reset
+        const defaults = {
+          mu: this.options.defaultMu,
+          sigma: this.options.defaultSigma,
+          wins: 0,
+          losses: 0,
+          roundsPlayed: 0
+        };
+        try {
+          const player = await this._findPlayerByIdentifier(identifier);
+          if (!player) {
+            await message.reply(`No player found: ${identifier}`);
+            return;
+          }
+          await this.db.upsertPlayerStats(player.eosID, defaults);
+          if (this.eloCache.has(player.eosID)) {
+            this.eloCache.set(player.eosID, { mu: defaults.mu, sigma: defaults.sigma });
+          }
+          await EloDiscord.sendDiscordMessage(message.channel, { embeds: [EloDiscord.buildAdminConfirmEmbed('Player Reset', `Reset ${player.name} to default rating.`)] });
+        } catch (err) {
+          await EloDiscord.sendDiscordMessage(message.channel, { embeds: [EloDiscord.buildErrorEmbed('Player Reset', err)] });
+        }
         return;
       }
 
-      if (sub === 'leaderboard') {
-        const players = await this.db.getLeaderboard(20);
-        await EloDiscord.sendDiscordMessage(message.channel, { embeds: [EloDiscord.buildLeaderboardEmbed(players, 20)] });
+      if (sub === 'backup') {
+        try {
+          const players = await this.db.exportPlayerStats();
+          const payload = JSON.stringify({
+            exportedAt: Date.now(),
+            playerCount: players.length,
+            players
+          }, null, 2);
+          const buffer = Buffer.from(payload, 'utf-8');
+          const filename = `elo-backup-${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
+          await message.channel.send({
+            content: `📦 ELO Backup — ${players.length} players`,
+            files: [{ attachment: buffer, name: filename }]
+          });
+        } catch (err) {
+          await EloDiscord.sendDiscordMessage(message.channel, { embeds: [EloDiscord.buildErrorEmbed('Backup', err)] });
+        }
         return;
       }
 
-      // !elo <identifier> — look up another player
-      const identifier = args.join(' ');
-      const player = await this._findPlayerByIdentifier(identifier);
+      if (sub === 'restore') {
+        if (!message.attachments.size) {
+          await message.reply('Please attach a backup JSON file with the !elo restore command.');
+          return;
+        }
+        try {
+          const attachment = message.attachments.first();
+          const response = await fetch(attachment.url);
+          const json = await response.json();
+          if (!Array.isArray(json.players)) {
+            await message.reply('Invalid backup format: missing players array.');
+            return;
+          }
+          await this.db.importPlayerStats(json.players);
+          await EloDiscord.sendDiscordMessage(message.channel, {
+            embeds: [EloDiscord.buildAdminConfirmEmbed('Restore Complete', `Restored ${json.players.length} players from backup.`)]
+          });
+        } catch (err) {
+          await EloDiscord.sendDiscordMessage(message.channel, { embeds: [EloDiscord.buildErrorEmbed('Restore', err)] });
+        }
+        return;
+      }
+    }
+
+    // --- Public commands (available in both channels) ---
+    if (!sub || sub === 'me') {
+      const identifier = message.author.username;
+      const player = await this.db.getPlayerStats(identifier) ??
+        (await this._findPlayerByIdentifier(identifier));
       if (!player) {
-        await message.reply(`No ELO record found for: ${identifier}`);
+        await message.reply('No ELO record found for your account.');
         return;
       }
       await EloDiscord.sendDiscordMessage(message.channel, { embeds: [EloDiscord.buildPlayerStatsEmbed(player)] });
       return;
     }
 
-    // --- Admin-only commands (admin channel only) ---
-    if (!isAdminChannel) return;
-
-    if (sub === 'reset') {
-      const identifier = args.slice(1).join(' ');
-
-      if (!identifier) {
-        // Full reset — require confirmation
-        await message.reply('⚠️ This will wipe ALL ELO ratings and round history. Reply `!elo reset confirm` within 30 seconds to proceed.');
-        this._resetConfirmPending = { timestamp: Date.now() };
-        return;
-      }
-
-      if (identifier === 'confirm') {
-        if (!this._resetConfirmPending || Date.now() - this._resetConfirmPending.timestamp > 30000) {
-          await message.reply('⚠️ No pending reset confirmation, or confirmation expired.');
-          this._resetConfirmPending = null;
-          return;
-        }
-        this._resetConfirmPending = null;
-        try {
-          await this.db.models.PlayerStats.destroy({ where: {} });
-          await this.db.models.RoundHistory.destroy({ where: {} });
-          this.eloCache.clear();
-          await EloDiscord.sendDiscordMessage(message.channel, { embeds: [EloDiscord.buildAdminConfirmEmbed('ELO Reset', 'All ratings and round history wiped.')] });
-        } catch (err) {
-          await EloDiscord.sendDiscordMessage(message.channel, { embeds: [EloDiscord.buildErrorEmbed('ELO Reset', err)] });
-        }
-        return;
-      }
-
-      // Single player reset
-      const defaults = {
-        mu: this.options.defaultMu,
-        sigma: this.options.defaultSigma,
-        wins: 0,
-        losses: 0,
-        roundsPlayed: 0
-      };
-      try {
-        const player = await this._findPlayerByIdentifier(identifier);
-        if (!player) {
-          await message.reply(`No player found: ${identifier}`);
-          return;
-        }
-        await this.db.upsertPlayerStats(player.eosID, defaults);
-        if (this.eloCache.has(player.eosID)) {
-          this.eloCache.set(player.eosID, { mu: defaults.mu, sigma: defaults.sigma });
-        }
-        await EloDiscord.sendDiscordMessage(message.channel, { embeds: [EloDiscord.buildAdminConfirmEmbed('Player Reset', `Reset ${player.name} to default rating.`)] });
-      } catch (err) {
-        await EloDiscord.sendDiscordMessage(message.channel, { embeds: [EloDiscord.buildErrorEmbed('Player Reset', err)] });
-      }
+    if (sub === 'leaderboard') {
+      const players = await this.db.getLeaderboard(20);
+      await EloDiscord.sendDiscordMessage(message.channel, { embeds: [EloDiscord.buildLeaderboardEmbed(players, 20)] });
       return;
     }
 
-    if (sub === 'backup') {
-      try {
-        const players = await this.db.exportPlayerStats();
-        const payload = JSON.stringify({
-          exportedAt: Date.now(),
-          playerCount: players.length,
-          players
-        }, null, 2);
-        const buffer = Buffer.from(payload, 'utf-8');
-        const filename = `elo-backup-${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
-        await message.channel.send({
-          content: `📦 ELO Backup — ${players.length} players`,
-          files: [{ attachment: buffer, name: filename }]
-        });
-      } catch (err) {
-        await EloDiscord.sendDiscordMessage(message.channel, { embeds: [EloDiscord.buildErrorEmbed('Backup', err)] });
-      }
+    // !elo <identifier> — look up another player
+    const identifier = args.join(' ');
+    const player = await this._findPlayerByIdentifier(identifier);
+    if (!player) {
+      await message.reply(`No ELO record found for: ${identifier}`);
       return;
     }
-
-    if (sub === 'restore') {
-      if (!message.attachments.size) {
-        await message.reply('Please attach a backup JSON file with the !elo restore command.');
-        return;
-      }
-      try {
-        const attachment = message.attachments.first();
-        const response = await fetch(attachment.url);
-        const json = await response.json();
-        if (!Array.isArray(json.players)) {
-          await message.reply('Invalid backup format: missing players array.');
-          return;
-        }
-        await this.db.importPlayerStats(json.players);
-        await EloDiscord.sendDiscordMessage(message.channel, {
-          embeds: [EloDiscord.buildAdminConfirmEmbed('Restore Complete', `Restored ${json.players.length} players from backup.`)]
-        });
-      } catch (err) {
-        await EloDiscord.sendDiscordMessage(message.channel, { embeds: [EloDiscord.buildErrorEmbed('Restore', err)] });
-      }
-      return;
-    }
+    await EloDiscord.sendDiscordMessage(message.channel, { embeds: [EloDiscord.buildPlayerStatsEmbed(player)] });
   }
 
   // Helper: find a player record by name, steamID, or eosID

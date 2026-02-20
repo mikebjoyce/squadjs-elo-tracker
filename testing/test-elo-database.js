@@ -3,8 +3,10 @@ import EloDatabase from '../utils/elo-database.js';
 
 export default async function runDatabaseTests(runTest) {
   // Setup: In-memory SQLite instance
-  const sequelize = new Sequelize('sqlite::memory:', {
-    logging: false // Disable console logging for cleaner test output
+  const sequelize = new Sequelize({
+    dialect: 'sqlite',
+    storage: ':memory:',
+    logging: false
   });
 
   // Mock connectors and server/options

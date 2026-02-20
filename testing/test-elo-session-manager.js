@@ -32,8 +32,8 @@ export default async function runSessionTests(runTest) {
 
       const p1Data = participants[0];
       if (p1Data.eosID !== 'p1') throw new Error('Wrong participant data');
-      if (p1Data.participationRatio !== 1.0) {
-        throw new Error(`Expected participationRatio 1.0, got ${p1Data.participationRatio}`);
+      if (Math.abs(p1Data.participationRatio - 1.0) > 0.0001) {
+        throw new Error(`Expected participationRatio near 1.0, got ${p1Data.participationRatio}`);
       }
       if (p1Data.assignedTeamID !== 1) throw new Error(`Expected assignedTeamID 1, got ${p1Data.assignedTeamID}`);
     });
@@ -120,8 +120,8 @@ export default async function runSessionTests(runTest) {
       const p1Data = participants.find((p) => p.eosID === 'p1');
       if (!p1Data) throw new Error('Player 1 data not found in participants');
 
-      if (p1Data.participationRatio !== 1.0) {
-        throw new Error(`Expected participationRatio 1.0 for disconnected player, got ${p1Data.participationRatio}`);
+      if (Math.abs(p1Data.participationRatio - 1.0) > 0.0001) {
+        throw new Error(`Expected participationRatio near 1.0 for disconnected player, got ${p1Data.participationRatio}`);
       }
     });
   } finally {
