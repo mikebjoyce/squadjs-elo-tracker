@@ -331,7 +331,7 @@ export default class EloTracker extends BasePlugin {
     if (playerCount < this.options.minPlayersForElo) {
       Logger.verbose('EloTracker', 1, `[onRoundEnded] Skipping ELO update: player count ${playerCount} below threshold ${this.options.minPlayersForElo}.`);
       if (this.discordAdminChannel) {
-        const embed = EloDiscord.buildRoundSkippedEmbed('Player count below threshold', playerCount, this.server.currentLayer?.name ?? 'Unknown');
+        const embed = EloDiscord.buildRoundSkippedEmbed(`Player count below threshold (Gamemode: ${gameMode ?? 'Unknown'})`, playerCount, this.server.currentLayer?.name ?? 'Unknown');
         await EloDiscord.sendDiscordMessage(this.discordAdminChannel, { embeds: [embed] });
       }
       return;
@@ -384,8 +384,8 @@ export default class EloTracker extends BasePlugin {
       Logger.verbose('EloTracker', 1, `[onRoundEnded] Skipping ELO update: One or both teams have no eligible participants (Team 1: ${team1Eligible.length}, Team 2: ${team2Eligible.length}).`);
       if (this.discordAdminChannel) {
         const embed = EloDiscord.buildRoundSkippedEmbed(
-          'One or both teams had no eligible participants',
-          eligible.length,
+          `One or both teams had no eligible participants (Gamemode: ${gameMode ?? 'Unknown'})`,
+          playerCount,
           this.server.currentLayer?.name ?? 'Unknown'
         );
         await EloDiscord.sendDiscordMessage(this.discordAdminChannel, { embeds: [embed] });
@@ -470,6 +470,7 @@ export default class EloTracker extends BasePlugin {
 
         const embed = EloDiscord.buildRoundSummaryEmbed({
           layerName: this.server.currentLayer?.name ?? 'Unknown',
+          gameMode,
           winningTeamID,
           ticketDiff: ticketDiff,
           roundDuration: roundEndTime - this.session.roundStartTime,
