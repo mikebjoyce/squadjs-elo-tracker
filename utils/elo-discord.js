@@ -80,7 +80,10 @@ export const EloDiscord = {
       ticketDiff,
       roundDuration,
       playerCount,
-      topMovers
+      topMovers,
+      team1AvgMu,
+      team2AvgMu,
+      calculationDuration
     } = data;
 
     const winnerText = winningTeamID === 1 ? 'Team 1' : (winningTeamID === 2 ? 'Team 2' : 'Draw');
@@ -91,15 +94,32 @@ export const EloDiscord = {
       return `${i + 1}. **${m.name}**: ${deltaSign}${m.deltaMu.toFixed(2)} μ (${m.muBefore.toFixed(2)} → ${m.muAfter.toFixed(2)})`;
     });
 
+    const eloFields = [];
+    if (team1AvgMu && team2AvgMu) {
+      const eloDiff = Math.abs(team1AvgMu - team2AvgMu);
+      eloFields.push({
+        name: 'Avg. Team Rating (μ)',
+        value: `Team 1: **${team1AvgMu.toFixed(2)}**\nTeam 2: **${team2AvgMu.toFixed(2)}**`,
+        inline: true
+      });
+      eloFields.push({
+        name: 'Rating Difference',
+        value: `**${eloDiff.toFixed(2)}**`,
+        inline: true
+      });
+    }
+
     return {
       color: 0x2ecc71,
       title: '🏆 Round Ended',
       fields: [
         { name: 'Map / Layer', value: layerName || 'Unknown', inline: true },
         { name: 'Winner', value: `${winnerText} (+${ticketDiff} tickets)`, inline: true },
-        { name: 'Duration', value: durationStr, inline: true },
         { name: 'Players Updated', value: playerCount.toString(), inline: true },
-        { name: 'Top ELO Movers', value: moverLines.length > 0 ? moverLines.join('\n') : 'None', inline: false }
+        ...eloFields,
+        { name: 'Duration', value: durationStr, inline: true },
+        { name: 'Processing Time', value: `${calculationDuration}ms`, inline: true },
+        { name: 'Largest Rating Changes', value: moverLines.length > 0 ? moverLines.join('\n') : 'None', inline: false }
       ],
       timestamp: new Date().toISOString()
     };

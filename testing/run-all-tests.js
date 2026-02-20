@@ -1,4 +1,5 @@
 import { fileURLToPath } from 'url';
+import fs from 'fs';
 
 const COLORS = {
   RESET: '\x1b[0m',
@@ -18,11 +19,11 @@ export async function runTest(name, fn) {
   try {
     await fn();
     console.log(`${COLORS.GREEN}[PASS]${COLORS.RESET}`);
-    return true;
+    return { passed: true, error: null };
   } catch (err) {
     console.log(`${COLORS.RED}[FAIL]${COLORS.RESET}`);
     console.error(err.stack || err);
-    return false;
+    return { passed: false, error: err.message || String(err) };
   }
 }
 
@@ -36,32 +37,62 @@ export async function runAll() {
     { name: 'EloCalculator', file: './test-elo-calculator.js' },
     { name: 'EloSessionManager', file: './test-elo-session-manager.js' },
     { name: 'EloDatabase', file: './test-elo-database.js' },
-    { name: 'EloTracker', file: './test-elo-tracker.js' }
+    { name: 'EloTracker', file: './test-elo-tracker.js' },
+    { name: 'EloSimulation', file: './test-elo-simulation.js', iterations: 20 }
   ];
 
+  const results = {};
+
   for (const suite of suites) {
-    console.log(`${COLORS.YELLOW}Running Suite: ${suite.name}${COLORS.RESET}`);
-    try {
-      // Dynamic import allows the runner to work even if files are missing during dev
-      const module = await import(suite.file);
-      
-      // Expecting default export to be a function accepting runTest
-      if (module.default && typeof module.default === 'function') {
-        await module.default(runTest);
-      } else {
-        console.log(`${COLORS.RED}  Skipped: No default export function found in ${suite.file}${COLORS.RESET}`);
+    results[suite.name] = [];
+    const iterations = suite.iterations || 1;
+
+    for (let i = 0; i < iterations; i++) {
+      const runLabel = iterations > 1 ? `${suite.name} (Run ${i + 1}/${iterations})` : suite.name;
+      console.log(`${COLORS.YELLOW}Running Suite: ${runLabel}${COLORS.RESET}`);
+
+      const suiteRunData = {
+        iteration: i + 1,
+        timestamp: new Date().toISOString(),
+        tests: []
+      };
+
+      const capturingRunTest = async (name, fn) => {
+        const result = await runTest(name, fn);
+        suiteRunData.tests.push({ name, passed: result.passed, error: result.error });
+        return result.passed;
+      };
+
+      try {
+        // Dynamic import allows the runner to work even if files are missing during dev
+        const module = await import(suite.file);
+        
+        // Expecting default export to be a function accepting runTest
+        if (module.default && typeof module.default === 'function') {
+          await module.default(capturingRunTest);
+        } else {
+          console.log(`${COLORS.RED}  Skipped: No default export function found in ${suite.file}${COLORS.RESET}`);
+        }
+      } catch (err) {
+        if (err.code === 'ERR_MODULE_NOT_FOUND') {
+          console.log(`${COLORS.RED}  Skipped: File not found (${suite.file})${COLORS.RESET}`);
+        } else {
+          console.error(`${COLORS.RED}  Error loading suite:${COLORS.RESET}`, err);
+        }
       }
-    } catch (err) {
-      if (err.code === 'ERR_MODULE_NOT_FOUND') {
-        console.log(`${COLORS.RED}  Skipped: File not found (${suite.file})${COLORS.RESET}`);
-      } else {
-        console.error(`${COLORS.RED}  Error loading suite:${COLORS.RESET}`, err);
-      }
+      results[suite.name].push(suiteRunData);
+      console.log('');
     }
-    console.log('');
   }
 
   console.log(`${COLORS.CYAN}=== All Tests Completed ===${COLORS.RESET}`);
+
+  try {
+    fs.writeFileSync('test-results.json', JSON.stringify(results, null, 2));
+    console.log(`${COLORS.GREEN}Results saved to test-results.json${COLORS.RESET}`);
+  } catch (err) {
+    console.error(`${COLORS.RED}Failed to save results:${COLORS.RESET}`, err);
+  }
 }
 
 // Execute if run directly

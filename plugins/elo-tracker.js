@@ -270,12 +270,18 @@ export default class EloTracker extends BasePlugin {
       return;
     }
 
+    const calculationStartTime = Date.now();
+
     // --- Build team arrays with mu/sigma from cache ---
     const getRating = (eosID) =>
       this.eloCache.get(eosID) ?? { mu: this.options.defaultMu, sigma: this.options.defaultSigma };
 
     const team1Eligible = eligible.filter(p => p.assignedTeamID === 1);
     const team2Eligible = eligible.filter(p => p.assignedTeamID === 2);
+
+    // --- Pre-computation for Discord ---
+    const team1Elo = this.getTeamElo(team1Eligible);
+    const team2Elo = this.getTeamElo(team2Eligible);
 
     if (team1Eligible.length === 0 || team2Eligible.length === 0) {
       Logger.verbose('EloTracker', 1, `[onRoundEnded] Skipping ELO update: One or both teams have no eligible participants (Team 1: ${team1Eligible.length}, Team 2: ${team2Eligible.length}).`);
@@ -356,6 +362,8 @@ export default class EloTracker extends BasePlugin {
       Logger.verbose('EloTracker', 1, `[onRoundEnded] DB write failed: ${err.message}`);
     }
 
+    const calculationDuration = Date.now() - calculationStartTime;
+
     // --- Discord post ---
     if (this.discordAdminChannel) {
       try {
@@ -369,7 +377,10 @@ export default class EloTracker extends BasePlugin {
           ticketDiff: ticketDiff,
           roundDuration: roundEndTime - this.session.roundStartTime,
           playerCount: eligible.length,
-          topMovers: sortedMovers
+          topMovers: sortedMovers,
+          team1AvgMu: team1Elo.averageMu,
+          team2AvgMu: team2Elo.averageMu,
+          calculationDuration
         });
         await EloDiscord.sendDiscordMessage(this.discordAdminChannel, { embeds: [embed] });
       } catch (err) {
