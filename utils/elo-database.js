@@ -453,4 +453,36 @@ export default class EloDatabase {
       return null;
     }
   }
+
+  async pruneStaleEntries(minRoundsForLeaderboard) {
+    if (!this.sequelize) return { tier1: 0, tier2: 0 };
+    const now = Date.now();
+    const thirtyDays = 30 * 24 * 60 * 60 * 1000;
+    const ninetyDays = 90 * 24 * 60 * 60 * 1000;
+
+    try {
+      const tier1Count = await this._executeWithRetry(async () => {
+        return await this.models.PlayerStats.destroy({
+          where: {
+            lastSeen: { [Sequelize.Op.lt]: now - thirtyDays },
+            roundsPlayed: { [Sequelize.Op.lt]: minRoundsForLeaderboard }
+          }
+        });
+      });
+
+      const tier2Count = await this._executeWithRetry(async () => {
+        return await this.models.PlayerStats.destroy({
+          where: {
+            lastSeen: { [Sequelize.Op.lt]: now - ninetyDays },
+            roundsPlayed: { [Sequelize.Op.gte]: minRoundsForLeaderboard }
+          }
+        });
+      });
+
+      return { tier1: tier1Count, tier2: tier2Count };
+    } catch (error) {
+      Logger.verbose('EloTracker', 1, `[DB] Error pruning stale entries: ${error.message}`);
+      return { tier1: 0, tier2: 0 };
+    }
+  }
 }

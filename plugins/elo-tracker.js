@@ -181,6 +181,10 @@ export default class EloTracker extends BasePlugin {
 
     const { roundStartTime: persistedStartTime } = await this.db.initDB();
 
+    // --- Prune stale player entries ---
+    const { tier1, tier2 } = await this.db.pruneStaleEntries(this.options.minRoundsForLeaderboard);
+    Logger.verbose('EloTracker', 1, `[mount] Pruned stale entries — Tier 1 (provisional): ${tier1}, Tier 2 (calibrated): ${tier2}`);
+
     // Restart Recovery
     let serverRoundStart = this.server.matchStartTime ? this.server.matchStartTime.getTime() : null;
 
