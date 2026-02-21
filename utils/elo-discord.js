@@ -287,7 +287,7 @@ export const EloDiscord = {
   buildRoundSkippedEmbed(reason, playerCount, layerName) {
     return {
       color: 0x95a5a6,
-      title: '⏭️ Round Skipped',
+      title: '⏭️ ELO Rating Update Skipped',
       fields: [
         { name: 'Reason', value: reason, inline: true },
         { name: 'Player Count', value: playerCount.toString(), inline: true },
