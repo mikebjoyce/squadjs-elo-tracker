@@ -76,6 +76,7 @@
   "plugin": "EloTracker",
   "enabled": true,
   "database": "sqlite",
+  "eloLogPath": "./elo-match-log.jsonl",
   "minParticipationRatio": 0.15,
   "defaultMu": 25.0,
   "defaultSigma": 8.333,
@@ -94,6 +95,7 @@
  * ════════════════════════════════════════════════════════════════
  */
 
+import { appendFileSync } from 'fs';
 import BasePlugin from './base-plugin.js';
 import Logger from '../../core/logger.js';
 import EloDatabase from '../utils/elo-database.js';
@@ -123,6 +125,7 @@ export default class EloTracker extends BasePlugin {
         description: 'Sequelize/SQLite connector.',
         default: 'sqlite'
       },
+      eloLogPath: { required: false, default: './elo-match-log.jsonl', type: 'string' },
       minParticipationRatio: { default: 0.15, type: 'number' },
       defaultMu: { default: 25.0, type: 'number' },
       defaultSigma: { default: 8.333, type: 'number' },
@@ -400,6 +403,9 @@ export default class EloTracker extends BasePlugin {
       outcome
     );
 
+    const team1RatingsBefore = team1Eligible.map(p => getRating(p.eosID));
+    const team2RatingsBefore = team2Eligible.map(p => getRating(p.eosID));
+
     // --- Apply participation scaling, build DB updates, track topMovers ---
     const dbUpdates = [];
     const topMovers = [];
@@ -459,6 +465,63 @@ export default class EloTracker extends BasePlugin {
       Logger.verbose('EloTracker', 1, `[onRoundEnded] DB write failed: ${err.message}`);
     }
 
+    const matchRecord = {
+      matchId: roundEndTime.toString(),
+      endedAt: roundEndTime,
+      layerName: this.server.currentLayer?.name ?? 'Unknown',
+      gameMode: gameMode ?? 'Unknown',
+      outcome,
+      roundDuration: roundEndTime - this.session.roundStartTime,
+      params: {
+        BETA: EloCalculator.BETA,
+        TAU: EloCalculator.TAU,
+        DRAW_PROBABILITY: EloCalculator.DRAW_PROBABILITY
+      },
+      players: [
+        ...team1Eligible.map((player, i) => {
+          const rating = team1RatingsBefore[i];
+          const { deltaMu, deltaSigma } = team1Updates[i];
+          const scaledDeltaMu = deltaMu * player.participationRatio;
+          const scaledDeltaSigma = deltaSigma * player.participationRatio;
+          return {
+            eosID: player.eosID,
+            name: player.name,
+            teamID: 1,
+            participationRatio: player.participationRatio,
+            muBefore: rating.mu,
+            sigmaBefore: rating.sigma,
+            rawDeltaMu: deltaMu,
+            rawDeltaSigma: deltaSigma,
+            scaledDeltaMu,
+            scaledDeltaSigma,
+            muAfter: rating.mu + scaledDeltaMu,
+            sigmaAfter: Math.max(rating.sigma - scaledDeltaSigma, 0.5)
+          };
+        }),
+        ...team2Eligible.map((player, i) => {
+          const rating = team2RatingsBefore[i];
+          const { deltaMu, deltaSigma } = team2Updates[i];
+          const scaledDeltaMu = deltaMu * player.participationRatio;
+          const scaledDeltaSigma = deltaSigma * player.participationRatio;
+          return {
+            eosID: player.eosID,
+            name: player.name,
+            teamID: 2,
+            participationRatio: player.participationRatio,
+            muBefore: rating.mu,
+            sigmaBefore: rating.sigma,
+            rawDeltaMu: deltaMu,
+            rawDeltaSigma: deltaSigma,
+            scaledDeltaMu,
+            scaledDeltaSigma,
+            muAfter: rating.mu + scaledDeltaMu,
+            sigmaAfter: Math.max(rating.sigma - scaledDeltaSigma, 0.5)
+          };
+        })
+      ]
+    };
+    this._appendMatchLog(matchRecord);
+
     const calculationDuration = Date.now() - calculationStartTime;
 
     // --- Discord post ---
@@ -511,5 +574,13 @@ export default class EloTracker extends BasePlugin {
         id,
         results.get(id) ?? { mu: this.options.defaultMu, sigma: this.options.defaultSigma }
     ]));
+  }
+
+  _appendMatchLog(record) {
+    try {
+      appendFileSync(this.options.eloLogPath, JSON.stringify(record) + '\n', 'utf8');
+    } catch (err) {
+      Logger.verbose('EloTracker', 1, `[_appendMatchLog] Failed to write log: ${err.message}`);
+    }
   }
 }

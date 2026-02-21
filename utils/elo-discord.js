@@ -321,8 +321,16 @@ export const EloDiscord = {
           const sessionCount = this.session.getSessionCount();
           const cacheCount = this.eloCache.size;
           const roundStartStr = this.session.roundStartTime
-            ? new Date(this.session.roundStartTime).toISOString()
+            ? `<t:${Math.floor(this.session.roundStartTime / 1000)}:R>`
             : 'None';
+
+          const cacheSample = Array.from(this.eloCache.entries())
+            .slice(0, 10)
+            .map(([id, data]) => {
+              const player = this.server.players.find(p => p.eosID === id);
+              return `\`${player ? player.name : id}\`: μ ${data.mu.toFixed(2)} σ ${data.sigma.toFixed(2)}`;
+            })
+            .join('\n');
 
           const embed = {
             color: 0x3498db,
@@ -332,7 +340,8 @@ export const EloDiscord = {
               { name: 'Ready', value: this.ready.toString(), inline: true },
               { name: 'Session Players', value: sessionCount.toString(), inline: true },
               { name: 'ELO Cache Entries', value: cacheCount.toString(), inline: true },
-              { name: 'Round Start', value: roundStartStr, inline: true }
+              { name: 'Round Start', value: roundStartStr, inline: true },
+              { name: 'Cache Sample (10)', value: cacheSample || 'Empty', inline: false }
             ],
             timestamp: new Date().toISOString()
           };
@@ -435,7 +444,68 @@ export const EloDiscord = {
           }
           return;
         }
-      }
+
+      //   if (sub === 'exportlogs') {
+      //       try {
+      //           const cutoff = Date.now() - (60 * 24 * 60 * 60 * 1000); // 60 days
+      //           let before = undefined;
+      //           const collected = [];
+
+      //           while (true) {
+      //           const batch = await message.channel.messages.fetch({
+      //               limit: 100,
+      //               before
+      //           });
+
+      //           if (!batch.size) break; // ONLY stop when no more messages
+
+      //           for (const msg of batch.values()) {
+      //               // store only messages within range
+      //               if (msg.createdTimestamp >= cutoff) {
+      //               collected.push({
+      //                   id: msg.id,
+      //                   timestamp: msg.createdTimestamp,
+      //                   author: {
+      //                   id: msg.author.id,
+      //                   username: msg.author.username
+      //                   },
+      //                   content: msg.content,
+      //                   embeds: msg.embeds?.map(e => e.toJSON?.() ?? e) ?? [],
+      //                   attachments: [...msg.attachments.values()].map(a => ({
+      //                   name: a.name,
+      //                   url: a.url
+      //                   }))
+      //               });
+      //               }
+      //           }
+
+      //           // advance cursor to oldest message in batch
+      //           before = batch.last().id;
+      //           }
+                
+      //           const payload = JSON.stringify({
+      //           exportedAt: Date.now(),
+      //           messageCount: collected.length,
+      //           messages: collected
+      //           }, null, 2);
+
+      //           const buffer = Buffer.from(payload, 'utf-8');
+      //           const filename = `discord-log-export-${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
+
+      //           await message.channel.send({
+      //           content: `📦 Log export complete — ${collected.length} messages`,
+      //           files: [{ attachment: buffer, name: filename }]
+      //           });
+
+      //       } catch (err) {
+      //           await EloDiscord.sendDiscordMessage(
+      //           message.channel,
+      //           { embeds: [EloDiscord.buildErrorEmbed('Log Export', err)] }
+      //           );
+      //       }
+      //       return;
+      //   }
+      // }
 
       // --- Public commands (available in both channels) ---
       if (sub === 'link') {
