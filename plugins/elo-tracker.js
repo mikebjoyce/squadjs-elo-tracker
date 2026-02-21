@@ -323,7 +323,14 @@ export default class EloTracker extends BasePlugin {
   }
 
   async onRoundEnded(data) {
-    if (!this.ready) return;
+    if (!this.ready) {
+      Logger.verbose('EloTracker', 1, '[onRoundEnded] Fired but plugin not ready. Skipping.');
+      if (this.discordAdminChannel) {
+        const embed = EloDiscord.buildRoundSkippedEmbed('Plugin not ready at round end', 0, this.server.currentLayer?.name ?? 'Unknown');
+        await EloDiscord.sendDiscordMessage(this.discordAdminChannel, { embeds: [embed] });
+      }
+      return;
+    }
 
     const roundEndTime = Date.now();
 
@@ -367,6 +374,14 @@ export default class EloTracker extends BasePlugin {
 
     if (eligible.length === 0) {
       Logger.verbose('EloTracker', 1, '[onRoundEnded] No eligible participants. Skipping ELO update.');
+      if (this.discordAdminChannel) {
+        const embed = EloDiscord.buildRoundSkippedEmbed(
+          `No eligible participants (0 players met minParticipationRatio of ${this.options.minParticipationRatio})`,
+          participants.length,
+          this.server.currentLayer?.name ?? 'Unknown'
+        );
+        await EloDiscord.sendDiscordMessage(this.discordAdminChannel, { embeds: [embed] });
+      }
       return;
     }
 
