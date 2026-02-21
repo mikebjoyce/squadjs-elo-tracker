@@ -505,7 +505,8 @@ export const EloDiscord = {
       //       }
       //       return;
       //   }
-      // }
+      // 
+      }
 
       // --- Public commands (available in both channels) ---
       if (sub === 'link') {
