@@ -203,7 +203,7 @@ export default class EloTracker extends BasePlugin {
       this.session.startRound(persistedStartTime);
       Logger.verbose('EloTracker', 1, `Restart detected. Resuming round from saved start time: ${new Date(persistedStartTime).toISOString()}`);
       // Immediately populate sessions for currently connected players
-      await this.onUpdatedPlayerInfo();
+      this.session.updatePlayers(this.server.players, persistedStartTime);
     } else {
       // Fresh round
       const now = Date.now();

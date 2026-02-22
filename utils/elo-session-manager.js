@@ -64,10 +64,8 @@ export default class EloSessionManager {
    * 
    * @param {Array<{eosID: string, name: string, steamID: string, teamID: number}>} currentPlayers 
    */
-  updatePlayers(currentPlayers) {
+  updatePlayers(currentPlayers, timestamp = Date.now()) {
     if (!this.roundStartTime) return;
-
-    const now = Date.now();
 
     for (const player of currentPlayers) {
       const { eosID, name, steamID, teamID } = player;
@@ -77,7 +75,7 @@ export default class EloSessionManager {
         // Action: Open new segment
         const newSegment = {
           teamID: teamID,
-          joinTime: now,
+          joinTime: timestamp,
           leaveTime: null
         };
 
@@ -101,23 +99,23 @@ export default class EloSessionManager {
           // activeSegment is null — reopen a segment for this player
           const newSegment = {
             teamID: teamID,
-            joinTime: now,
+            joinTime: timestamp,
             leaveTime: null
           };
           session.segments.push(newSegment);
           session.activeSegment = newSegment;
         } else if (session.activeSegment.teamID !== teamID) {
-          // Action: Team changed -> Close active, open new
-          session.activeSegment.leaveTime = now;
+          // Action: Team changed -> Close active segment, open new segment
+          session.activeSegment.leaveTime = timestamp;
 
           const newSegment = {
             teamID: teamID,
-            joinTime: now,
+            joinTime: timestamp,
             leaveTime: null
           };
 
           session.segments.push(newSegment);
-          session.activeSegment = newSegment;
+          session.activeSegment = newSegment;  // set current
         }
         // Condition: Team unchanged -> No action
       }
