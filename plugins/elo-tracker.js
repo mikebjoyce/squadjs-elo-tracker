@@ -40,6 +40,7 @@
  * Core:
  * database                       - Sequelize/SQLite connector for persistent storage.
  * enablePublicIngameCommands     - Enable/disable public !elo in-game commands.
+ * eloLogPath                     - Path to output JSON lines file containing round outcome histories.
  *
  * ELO Algorithm:
  * defaultMu                      - Default TrueSkill μ for new players.
@@ -84,6 +85,7 @@
   "defaultSigma": 8.333,
   "minPlayersForElo": 80,
   "minRoundsForLeaderboard": 10,
+  "roundStartEmbedDelayMs": 180000,
   "ignoredGameModes": ["Seed", "Training"],
   "enablePublicIngameCommands": true,
   "discordClient": "discord",
@@ -108,7 +110,7 @@ import EloCommands from '../utils/elo-commands.js';
 
 export default class EloTracker extends BasePlugin {
   static get version() {
-    return '0.2.4';
+    return '0.2.5';
   }
 
   static get description() {
@@ -179,6 +181,7 @@ export default class EloTracker extends BasePlugin {
     this.listeners.onNewGame = this.onNewGame.bind(this);
     this.listeners.onUpdatedPlayerInfo = this.onUpdatedPlayerInfo.bind(this);
     this.listeners.onRoundEnded = this.onRoundEnded.bind(this);
+    this.listeners.onTeamBalancerScramble = this.onTeamBalancerScramble.bind(this);
     EloDiscord.registerDiscordCommands(this);
     this.listeners.onDiscordMessage = this.onDiscordMessage.bind(this);
     EloCommands.register(this);
@@ -250,12 +253,14 @@ export default class EloTracker extends BasePlugin {
     this.server.removeListener('NEW_GAME', this.listeners.onNewGame);
     this.server.removeListener('UPDATED_PLAYER_INFORMATION', this.listeners.onUpdatedPlayerInfo);
     this.server.removeListener('ROUND_ENDED', this.listeners.onRoundEnded);
+    this.server.removeListener('TEAM_BALANCER_SCRAMBLE_EXECUTED', this.listeners.onTeamBalancerScramble);
     this.server.removeListener('CHAT_COMMAND:elo', this.listeners.onEloCommand);
     this.server.removeListener('CHAT_COMMAND:eloadmin', this.listeners.onEloAdminCommand);
 
     this.server.on('NEW_GAME', this.listeners.onNewGame);
     this.server.on('UPDATED_PLAYER_INFORMATION', this.listeners.onUpdatedPlayerInfo);
     this.server.on('ROUND_ENDED', this.listeners.onRoundEnded);
+    this.server.on('TEAM_BALANCER_SCRAMBLE_EXECUTED', this.listeners.onTeamBalancerScramble);
     this.server.on('CHAT_COMMAND:elo', this.listeners.onEloCommand);
     this.server.on('CHAT_COMMAND:eloadmin', this.listeners.onEloAdminCommand);
     
@@ -278,6 +283,7 @@ export default class EloTracker extends BasePlugin {
     this.server.removeListener('NEW_GAME', this.listeners.onNewGame);
     this.server.removeListener('UPDATED_PLAYER_INFORMATION', this.listeners.onUpdatedPlayerInfo);
     this.server.removeListener('ROUND_ENDED', this.listeners.onRoundEnded);
+    this.server.removeListener('TEAM_BALANCER_SCRAMBLE_EXECUTED', this.listeners.onTeamBalancerScramble);
     this.server.removeListener('CHAT_COMMAND:elo', this.listeners.onEloCommand);
     this.server.removeListener('CHAT_COMMAND:eloadmin', this.listeners.onEloAdminCommand);
 
@@ -373,6 +379,35 @@ export default class EloTracker extends BasePlugin {
     } catch (err) {
       Logger.verbose('EloTracker', 1, `Failed to post start embed: ${err.message}`);
     }
+  }
+
+  async onTeamBalancerScramble(data) {
+    if (!this.ready) return;
+    
+    Logger.verbose('EloTracker', 1, '[onTeamBalancerScramble] Event received. Waiting 5s to capture post-scramble state...');
+    
+    setTimeout(async () => {
+      try {
+        const embedData = this.buildRoundStartData();
+        if (embedData.status === 'warming' || embedData.status === 'empty') {
+          Logger.verbose('EloTracker', 1, '[onTeamBalancerScramble] Data not ready, skipping embed.');
+          return;
+        }
+        
+        const embed = EloDiscord.buildRoundStartEmbed(embedData, 'manual');
+        embed.title = `🔀 Post-Scramble Team Balance - ${embedData.layerName || 'Unknown'}`;
+        
+        if (this.discordPublicChannel) {
+          await EloDiscord.sendDiscordMessage(this.discordPublicChannel, { embeds: [embed] });
+        }
+        if (this.discordAdminChannel && this.discordAdminChannel.id !== this.discordPublicChannel?.id) {
+          await EloDiscord.sendDiscordMessage(this.discordAdminChannel, { embeds: [embed] });
+        }
+        Logger.verbose('EloTracker', 1, '[onTeamBalancerScramble] Post-scramble embed posted.');
+      } catch (err) {
+        Logger.verbose('EloTracker', 1, `[onTeamBalancerScramble] Failed to post scramble embed: ${err.message}`);
+      }
+    }, 5000);
   }
 
   async onRoundEnded(data) {
@@ -744,7 +779,7 @@ export default class EloTracker extends BasePlugin {
     const results = await this.db.getPlayerStatsBatch(eosIDs);
     return new Map(eosIDs.map(id => [
         id,
-        results.get(id) ?? { mu: this.options.defaultMu, sigma: this.options.defaultSigma }
+        results.get(id) ?? { mu: this.options.defaultMu, sigma: this.options.defaultSigma, roundsPlayed: 0 }
     ]));
   }
 

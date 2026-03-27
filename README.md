@@ -1,4 +1,4 @@
-# EloTracker Plugin v0.2.0
+# EloTracker Plugin v0.2.5
 
 **SquadJS Plugin for Skill-Based Player Rating**
 
@@ -98,12 +98,15 @@ Add to your `config.json`:
   "discordClient": "discord",
   "discordPublicChannelID": "",
   "discordAdminChannelID": "",
+  "eloLogPath": "./elo-match-log.jsonl",
+  "minParticipationRatio": 0.15,
   "defaultMu": 25.0,
   "defaultSigma": 8.333,
+  "minPlayersForElo": 80,
   "minRoundsForLeaderboard": 10,
-  "minPlayersToCountRound": 10,
-  "enablePublicIngameCommands": true,
-  "playerUpdateIntervalSeconds": 30
+  "roundStartEmbedDelayMs": 180000,
+  "ignoredGameModes": ["Seed", "Training"],
+  "enablePublicIngameCommands": true
 }
 ```
 
@@ -169,23 +172,25 @@ Admin Commands (admin channel only):
 ```text
 Core Settings:
 database                       - Sequelize connector for persistent storage (SQLite).
+enablePublicIngameCommands     - Enable/disable public !elo in-game commands.
+eloLogPath                     - Path to output JSON lines file containing round outcome histories.
+
+ELO Algorithm:
 defaultMu                      - Starting skill estimate for new players (default: 25.0).
 defaultSigma                   - Starting uncertainty for new players (default: 8.333).
+minParticipationRatio          - Min fraction of round played to earn ELO.
+
+Eligibility:
+minPlayersForElo               - Min server population to run ELO updates.
 minRoundsForLeaderboard        - Rounds required before a player appears on the ranked
                                  leaderboard and receives an official rank (default: 10).
-minPlayersToCountRound         - Minimum players required for a round to affect ratings.
-
-In-Game Commands:
-enablePublicIngameCommands     - Allow players to use !elo commands in-game (default: true).
-
-Session Tracking:
-playerUpdateIntervalSeconds    - How often (seconds) the plugin snapshots the current
-                                 player list to track joins and team switches.
+ignoredGameModes               - Game modes excluded from ELO tracking.
 
 Discord Integration:
 discordClient                  - Discord connector name.
 discordPublicChannelID         - Channel ID for public !elo commands and output.
 discordAdminChannelID          - Channel ID for admin-only commands and logs.
+roundStartEmbedDelayMs         - Delay in ms after round start before posting the round info embed. Default: 180000 (3 min).
 ```
 
 ---
