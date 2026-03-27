@@ -108,7 +108,7 @@ import EloCommands from '../utils/elo-commands.js';
 
 export default class EloTracker extends BasePlugin {
   static get version() {
-    return '0.2.3';
+    return '0.2.4';
   }
 
   static get description() {
@@ -638,11 +638,18 @@ export default class EloTracker extends BasePlugin {
   }
 
   buildRoundStartData() {
-    if (this.eloCache.size === 0) {
+    const players = this.server.players;
+
+    // If the server is empty, return an 'empty' status instead of 'warming'
+    if (players.length === 0) {
+      return { status: 'empty', totalPlayerCount: 0 };
+    }
+
+    // Fallback for an actual cold cache if players are present
+    if (this.eloCache.size === 0 && players.length > 0) {
       return { status: 'warming' };
     }
 
-    const players = this.server.players.filter(p => p.teamID === 1 || p.teamID === 2);
     const t1Players = players.filter(p => p.teamID === 1);
     const t2Players = players.filter(p => p.teamID === 2);
 

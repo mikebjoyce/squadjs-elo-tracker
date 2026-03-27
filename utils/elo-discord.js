@@ -403,6 +403,16 @@ export const EloDiscord = {
       };
     }
 
+    // Handle empty server status
+    if (data.status === 'empty' || data.totalPlayerCount === 0) {
+      return {
+        color: 0x95a5a6,
+        title: '🛰️ Live Round Info',
+        description: 'The server is currently empty. No active match data to display.',
+        timestamp: new Date().toISOString()
+      };
+    }
+
     const { layerName, t1, t2, muDelta, regDelta, veteranLead, matchVeterancy, roundStartTime, totalPlayerCount } = data;
 
     const vUI = getVeterancyUI(matchVeterancy);
