@@ -172,6 +172,7 @@ export default class EloTracker extends BasePlugin {
     this._isMounted = false;
     this.ready = false;
     this._roundStartEmbedPending = null;
+    this.lastRoundSnapshot = null;
 
     // Bound listeners — mirror TeamBalancer pattern exactly
     this.listeners = {};
@@ -300,66 +301,77 @@ export default class EloTracker extends BasePlugin {
     const now = Date.now();
     this.session.startRound(now);
     await this.db.saveRoundStartTime(now);
+    this.lastRoundSnapshot = null;
     this.eloCache.clear();
     this._roundStartEmbedPending = Date.now();
   }
 
-  async onUpdatedPlayerInfo() {
+  /**
+   * Periodic update for player info.
+   * Backgrounds DB fetches to prevent RCON/Main-thread stalls.
+   */
+  onUpdatedPlayerInfo() {
     if (!this.ready) return;
 
-    // Filter to assigned players only (teamID 1 or 2)
-    const currentPlayers = this.server.players.filter(
-      (p) => p.teamID === 1 || p.teamID === 2
-    );
+    const allPlayers = this.server.players;
+    this.session.updatePlayers(allPlayers);
 
-    // Update session map
-    this.session.updatePlayers(currentPlayers);
-
-    // Find players not yet in eloCache
-    const uncachedIDs = currentPlayers
-      .map((p) => p.eosID)
-      .filter((id) => !this.eloCache.has(id));
-
-    if (uncachedIDs.length > 0) {
-      // Batch DB read for uncached players
-      const dbResults = await this.db.getPlayerStatsBatch(uncachedIDs);
-
-      // Re-check who is connected *after* the async DB call to prevent race conditions
-      const currentlyConnected = new Set(this.server.players.map(p => p.eosID));
-
-      for (const eosID of uncachedIDs) {
-        // Only cache if the player is still connected
-        if (currentlyConnected.has(eosID)) {
-          const record = dbResults.get(eosID);
-          if (record) {
-            this.eloCache.set(eosID, record);
-          } else {
-            this.eloCache.set(eosID, {
-              mu: this.options.defaultMu,
-              sigma: this.options.defaultSigma,
-              roundsPlayed: 0,
-              wins: 0,
-              losses: 0
-            });
-          }
-        }
+    // Sync check for uncached players (No .filter/.map to save memory)
+    const uncachedIDs = [];
+    for (let i = 0; i < allPlayers.length; i++) {
+      const p = allPlayers[i];
+      if (p?.eosID && !this.eloCache.has(p.eosID)) {
+        uncachedIDs.push(p.eosID);
       }
     }
 
+    if (uncachedIDs.length > 0) {
+      // Non-blocking fetch
+      this.db.getPlayerStatsBatch(uncachedIDs)
+        .then((dbResults) => {
+          // Re-verify connection state to prevent ghost caching
+          const livePlayers = new Set(this.server.players.map(p => p.eosID));
+
+          for (const [eosID, record] of dbResults) {
+            if (livePlayers.has(eosID)) {
+              this.eloCache.set(eosID, record || {
+                mu: this.options.defaultMu,
+                sigma: this.options.defaultSigma,
+                roundsPlayed: 0,
+                wins: 0,
+                losses: 0
+              });
+            }
+          }
+        })
+        .catch((err) => Logger.verbose('EloTracker', 1, `Background fetch failed: ${err.message}`));
+    }
+
+    // Delayed Round Start Embed logic
     if (
       this._roundStartEmbedPending !== null &&
       this.eloCache.size > 0 &&
       Date.now() - this._roundStartEmbedPending >= this.options.roundStartEmbedDelayMs
     ) {
+      // Gate by min players
+      if (allPlayers.length < this.options.minPlayersForElo) return;
+
       this._roundStartEmbedPending = null;
-      try {
-        const embedData = this.buildRoundStartData();
-        const embed = EloDiscord.buildRoundStartEmbed(embedData);
-        await EloDiscord.sendDiscordMessage(this.discordPublicChannel, { embeds: [embed] });
-        Logger.verbose('EloTracker', 1, 'Round start embed posted.');
-      } catch (err) {
-        Logger.verbose('EloTracker', 1, `Round start embed failed: ${err.message}`);
-      }
+      this.sendDelayedStartEmbed();
+    }
+  }
+
+  /**
+   * Handles heavy embed construction and Discord API calls.
+   */
+  async sendDelayedStartEmbed() {
+    try {
+      const embedData = this.buildRoundStartData();
+      const embed = EloDiscord.buildRoundStartEmbed(embedData);
+      await EloDiscord.sendDiscordMessage(this.discordPublicChannel, { embeds: [embed] });
+      Logger.verbose('EloTracker', 1, 'Round start embed posted.');
+    } catch (err) {
+      Logger.verbose('EloTracker', 1, `Failed to post start embed: ${err.message}`);
     }
   }
 
@@ -620,6 +632,7 @@ export default class EloTracker extends BasePlugin {
     }
 
     // --- Flush cache ---
+    this.lastRoundSnapshot = new Map(this.eloCache);
     this.eloCache.clear();
     Logger.verbose('EloTracker', 1, `[onRoundEnded] ELO update complete. ${eligible.length} players updated.`);
   }
@@ -665,7 +678,8 @@ export default class EloTracker extends BasePlugin {
       regDelta,
       flags,
       veteranLead,
-      matchVeterancy
+      matchVeterancy,
+      totalPlayerCount: players.length
     };
   }
 
