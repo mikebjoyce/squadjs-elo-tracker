@@ -354,16 +354,13 @@ export default class EloTracker extends BasePlugin {
     }
 
     // Delayed Round Start Embed logic
-    if (
-      this._roundStartEmbedPending !== null &&
-      this.eloCache.size > 0 &&
-      Date.now() - this._roundStartEmbedPending >= this.options.roundStartEmbedDelayMs
-    ) {
-      // Gate by min players
-      if (allPlayers.length < this.options.minPlayersForElo) return;
-
+    if (this._roundStartEmbedPending !== null && Date.now() - this._roundStartEmbedPending >= this.options.roundStartEmbedDelayMs)
+    {
       this._roundStartEmbedPending = null;
-      this.sendDelayedStartEmbed();
+      if(this.eloCache.size > 0 && allPlayers.length > this.options.minPlayersForElo)
+      {
+        this.sendDelayedStartEmbed();
+      }
     }
   }
 
