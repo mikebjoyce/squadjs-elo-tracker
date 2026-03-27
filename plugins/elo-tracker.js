@@ -28,6 +28,7 @@
  *
  * Admin Commands (admin channel only):
  * !elo status                    → Plugin status and current round info.
+ * !elo roundinfo                 → Live round snapshot: team ELO balance, top players, top squads.
  * !elo reset                     → Wipe ALL ratings + history (requires confirm).
  * !elo reset confirm             → Confirm a pending full reset.
  * !elo reset <name|steamID>      → Reset a single player to default rating.
@@ -54,6 +55,7 @@
  * discordClient                  - Discord connector for logging.
  * discordAdminChannelID          - Channel ID for admin round summaries.
  * discordPublicChannelID         - Channel ID for public-facing output.
+ * roundStartEmbedDelayMs         - Delay in ms after round start before posting the round info embed. Default: 180000 (3 min).
  *
  * ─── CONFIGURATION EXAMPLE ──────────────────────────────────────
 
@@ -106,7 +108,7 @@ import EloCommands from '../utils/elo-commands.js';
 
 export default class EloTracker extends BasePlugin {
   static get version() {
-    return '0.2.0';
+    return '0.2.3';
   }
 
   static get description() {
@@ -131,6 +133,7 @@ export default class EloTracker extends BasePlugin {
       defaultSigma: { default: 8.333, type: 'number' },
       minPlayersForElo: { default: 80, type: 'number' },
       minRoundsForLeaderboard: { default: 10, type: 'number' },
+      roundStartEmbedDelayMs: { required: false, default: 180000, type: 'number' },
       ignoredGameModes: { default: ['Seed', 'Training'], type: 'array' },
       enablePublicIngameCommands: { default: true, type: 'boolean' },
       discordClient: {
@@ -150,7 +153,16 @@ export default class EloTracker extends BasePlugin {
     this.db = new EloDatabase(server, options, connectors);
     this.session = new EloSessionManager();
 
-    // ELO cache — Map<eosID, { mu, sigma }>
+    this.thresholds = {
+      visitorMaxGames: 3,      // 0-3 games
+      provisionalMaxGames: 9,  // 4-9 games
+      regularMinGames: 10,     // 10+ games
+      troublingDelta: 1.5,     // Delta Mu trigger
+      criticalDelta: 3.0,      // Delta Mu trigger
+      imbalanceRatio: 1.5      // 50% more regulars trigger
+    };
+
+    // ELO cache — Map<eosID, { mu, sigma, roundsPlayed, wins, losses }>
     // Connected players only. Populated on join, flushed at round end.
     this.eloCache = new Map();
 
@@ -159,6 +171,7 @@ export default class EloTracker extends BasePlugin {
 
     this._isMounted = false;
     this.ready = false;
+    this._roundStartEmbedPending = null;
 
     // Bound listeners — mirror TeamBalancer pattern exactly
     this.listeners = {};
@@ -288,6 +301,7 @@ export default class EloTracker extends BasePlugin {
     this.session.startRound(now);
     await this.db.saveRoundStartTime(now);
     this.eloCache.clear();
+    this._roundStartEmbedPending = Date.now();
   }
 
   async onUpdatedPlayerInfo() {
@@ -306,22 +320,45 @@ export default class EloTracker extends BasePlugin {
       .map((p) => p.eosID)
       .filter((id) => !this.eloCache.has(id));
 
-    if (uncachedIDs.length === 0) return;
+    if (uncachedIDs.length > 0) {
+      // Batch DB read for uncached players
+      const dbResults = await this.db.getPlayerStatsBatch(uncachedIDs);
 
-    // Batch DB read for uncached players
-    const dbResults = await this.db.getPlayerStatsBatch(uncachedIDs);
+      // Re-check who is connected *after* the async DB call to prevent race conditions
+      const currentlyConnected = new Set(this.server.players.map(p => p.eosID));
 
-    // Re-check who is connected *after* the async DB call to prevent race conditions
-    const currentlyConnected = new Set(this.server.players.map(p => p.eosID));
+      for (const eosID of uncachedIDs) {
+        // Only cache if the player is still connected
+        if (currentlyConnected.has(eosID)) {
+          const record = dbResults.get(eosID);
+          if (record) {
+            this.eloCache.set(eosID, record);
+          } else {
+            this.eloCache.set(eosID, {
+              mu: this.options.defaultMu,
+              sigma: this.options.defaultSigma,
+              roundsPlayed: 0,
+              wins: 0,
+              losses: 0
+            });
+          }
+        }
+      }
+    }
 
-    for (const eosID of uncachedIDs) {
-      // Only cache if the player is still connected
-      if (currentlyConnected.has(eosID)) {
-        const record = dbResults.get(eosID);
-        this.eloCache.set(eosID, {
-          mu: record ? record.mu : this.options.defaultMu,
-          sigma: record ? record.sigma : this.options.defaultSigma
-        });
+    if (
+      this._roundStartEmbedPending !== null &&
+      this.eloCache.size > 0 &&
+      Date.now() - this._roundStartEmbedPending >= this.options.roundStartEmbedDelayMs
+    ) {
+      this._roundStartEmbedPending = null;
+      try {
+        const embedData = this.buildRoundStartData();
+        const embed = EloDiscord.buildRoundStartEmbed(embedData);
+        await EloDiscord.sendDiscordMessage(this.discordPublicChannel, { embeds: [embed] });
+        Logger.verbose('EloTracker', 1, 'Round start embed posted.');
+      } catch (err) {
+        Logger.verbose('EloTracker', 1, `Round start embed failed: ${err.message}`);
       }
     }
   }
@@ -398,10 +435,6 @@ export default class EloTracker extends BasePlugin {
     const team1Eligible = eligible.filter(p => p.assignedTeamID === 1);
     const team2Eligible = eligible.filter(p => p.assignedTeamID === 2);
 
-    // --- Pre-computation for Discord ---
-    const team1Elo = this.getTeamElo(team1Eligible);
-    const team2Elo = this.getTeamElo(team2Eligible);
-
     if (team1Eligible.length === 0 || team2Eligible.length === 0) {
       Logger.verbose('EloTracker', 1, `[onRoundEnded] Skipping ELO update: One or both teams have no eligible participants (Team 1: ${team1Eligible.length}, Team 2: ${team2Eligible.length}).`);
       if (this.discordAdminChannel) {
@@ -431,11 +464,18 @@ export default class EloTracker extends BasePlugin {
     const now = Date.now();
 
     const processTeam = (players, updates, isWinner, isLoser) => {
+      const metrics = this._getMatchMetrics(players);
+      let totalDeltaMu = 0;
+      let totalDeltaSigma = 0;
+
       players.forEach((player, i) => {
         const { deltaMu, deltaSigma } = updates[i];
         const rating = getRating(player.eosID);
         const scaledDeltaMu = deltaMu * player.participationRatio;
         const scaledDeltaSigma = deltaSigma * player.participationRatio;
+
+        totalDeltaMu += scaledDeltaMu;
+        totalDeltaSigma += Math.abs(scaledDeltaSigma); // Sum absolute change in uncertainty
 
         const newMu = rating.mu + scaledDeltaMu;
         const newSigma = Math.max(rating.sigma - scaledDeltaSigma, 0.5);
@@ -452,22 +492,33 @@ export default class EloTracker extends BasePlugin {
           lastSeen: now
         });
 
-        topMovers.push({
-          name: player.name,
-          muBefore: rating.mu,
-          muAfter: newMu,
-          deltaMu: scaledDeltaMu
-        });
+        // Largest Rating Changes: Filtered to Regulars Only
+        const rounds = rating.roundsPlayed ?? 0;
+        if (rounds >= this.thresholds.regularMinGames) {
+          topMovers.push({
+            name: player.name,
+            muBefore: rating.mu,
+            muAfter: newMu,
+            deltaMu: scaledDeltaMu
+          });
+        }
 
         // Update cache immediately
         this.eloCache.set(player.eosID, { mu: newMu, sigma: newSigma });
       });
+
+      // Averages calculated outside of forEach loop after summation is complete
+      return {
+        ...metrics,
+        avgDeltaMu: players.length > 0 ? totalDeltaMu / players.length : 0,
+        avgDeltaSigma: players.length > 0 ? totalDeltaSigma / players.length : 0
+      };
     };
 
     const team1IsWinner = outcome === 'team1win';
     const team2IsWinner = outcome === 'team2win';
-    processTeam(team1Eligible, team1Updates, team1IsWinner, team2IsWinner);
-    processTeam(team2Eligible, team2Updates, team2IsWinner, team1IsWinner);
+    const team1Summary = processTeam(team1Eligible, team1Updates, team1IsWinner, team2IsWinner);
+    const team2Summary = processTeam(team2Eligible, team2Updates, team2IsWinner, team1IsWinner);
 
     // --- DB writes ---
     try {
@@ -558,8 +609,8 @@ export default class EloTracker extends BasePlugin {
           roundDuration: roundEndTime - this.session.roundStartTime,
           playerCount: eligible.length,
           topMovers: sortedMovers,
-          team1AvgMu: team1Elo.averageMu,
-          team2AvgMu: team2Elo.averageMu,
+          team1Summary,
+          team2Summary,
           calculationDuration
         });
         await EloDiscord.sendDiscordMessage(this.discordAdminChannel, { embeds: [embed] });
@@ -571,6 +622,87 @@ export default class EloTracker extends BasePlugin {
     // --- Flush cache ---
     this.eloCache.clear();
     Logger.verbose('EloTracker', 1, `[onRoundEnded] ELO update complete. ${eligible.length} players updated.`);
+  }
+
+  buildRoundStartData() {
+    if (this.eloCache.size === 0) {
+      return { status: 'warming' };
+    }
+
+    const players = this.server.players.filter(p => p.teamID === 1 || p.teamID === 2);
+    const t1Players = players.filter(p => p.teamID === 1);
+    const t2Players = players.filter(p => p.teamID === 2);
+
+    const t1 = this._getMatchMetrics(t1Players);
+    const t2 = this._getMatchMetrics(t2Players);
+
+    const muDelta = Math.abs(t1.avgMu - t2.avgMu);
+    const regDelta = Math.abs(t1.tierStats.rCount - t2.tierStats.rCount);
+
+    const regHigher = Math.max(t1.tierStats.rCount, t2.tierStats.rCount);
+    const regLower = Math.min(t1.tierStats.rCount, t2.tierStats.rCount);
+    const regRatio = regLower > 0 ? regHigher / regLower : (regHigher > 0 ? Infinity : 1);
+    const isPopImbalance = regRatio > this.thresholds.imbalanceRatio && regHigher > regLower;
+    
+    const veteranLead = t1.tierStats.rCount === t2.tierStats.rCount ? 'Tie' : 
+      (t1.tierStats.rCount > t2.tierStats.rCount ? 'Team 1' : 'Team 2');
+
+    const matchVeterancy = (t1.count + t2.count) > 0 
+      ? (t1.tierStats.rCount + t2.tierStats.rCount) / (t1.count + t2.count)
+      : 0;
+
+    const flags = {
+      isHighDelta: muDelta >= this.thresholds.troublingDelta,
+      isCriticalDelta: muDelta >= this.thresholds.criticalDelta,
+      isPopImbalance
+    };
+
+    return {
+      layerName: this.server.currentLayer?.name ?? 'Unknown',
+      roundStartTime: this.session.roundStartTime,
+      t1, t2,
+      muDelta,
+      regDelta,
+      flags,
+      veteranLead,
+      matchVeterancy
+    };
+  }
+
+  _getMatchMetrics(players) {
+    const thresholds = this.thresholds;
+    const defaultMu = this.options.defaultMu;
+
+    let vCount = 0, pCount = 0, rCount = 0;
+    let totalMu = 0, totalRegMu = 0;
+
+    for (const p of players) {
+      const cached = this.eloCache.get(p.eosID);
+      const mu = cached?.mu ?? defaultMu;
+      const rounds = cached?.roundsPlayed ?? 0;
+
+      totalMu += mu;
+      if (rounds >= thresholds.regularMinGames) {
+        rCount++;
+        totalRegMu += mu;
+      } else if (rounds > thresholds.visitorMaxGames) {
+        pCount++;
+      } else {
+        vCount++;
+      }
+    }
+
+    const count = players.length;
+    const veterancy = count > 0 ? rCount / count : 0;
+
+    return {
+      count,
+      tierStats: { vCount, pCount, rCount },
+      tierString: `${vCount} Visitors | ${pCount} Prov. | ${rCount} Regs`,
+      avgMu: count > 0 ? totalMu / count : defaultMu,
+      avgRegMu: rCount > 0 ? totalRegMu / rCount : null,
+      veterancy
+    };
   }
 
   getTeamElo(players) {

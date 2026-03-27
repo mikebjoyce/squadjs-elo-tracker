@@ -77,11 +77,11 @@ const EloCommands = {
       const sub = args[0]?.toLowerCase();
       const player = info.player || { steamID: info.steamID, name: info.playerName };
 
-      // !elo or !elo help
-      if (!sub || sub === 'help') {
+      // !elo help
+      if (sub === 'help') {
         return await this.respond(player, [
           '=== EloTracker Commands ===',
-          '!elo — Your ELO rating',
+          '!elo — Show your current rating and rank',
           '!elo <name | steamID> — Look up another player',
           '!elo leaderboard — Top 10 players by rating',
           '!elo help — Show this message'
@@ -105,8 +105,8 @@ const EloCommands = {
         }
       }
 
-      // !elo <identifier> — player lookup
-      const identifier = args.join(' ');
+      // !elo (no args) or !elo <identifier> — lookup
+      const identifier = sub ? args.join(' ') : (player.steamID || player.eosID);
       try {
         const record = await this._findPlayerByIdentifier(identifier);
         if (!record) {
@@ -153,7 +153,7 @@ const EloCommands = {
       if (!sub || sub === 'help') {
         return await this.respond(player, [
           '=== EloTracker Admin Commands ===',
-          '!eloadmin reset <name|steamID> — Reset a player to default rating',
+          '!eloadmin reset <name|steamID|eosID> — Reset a player to default rating',
           '!eloadmin status — Plugin status and current round info',
           '!eloadmin help — Show this message'
         ].join('\n'));
