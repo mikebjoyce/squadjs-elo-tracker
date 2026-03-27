@@ -192,7 +192,8 @@ export const EloDiscord = {
       winningTeamID,
       ticketDiff,
       roundDuration,
-      playerCount,
+      totalPlayerCount,
+      playersUpdatedCount,
       topMovers,
       team1Summary,
       team2Summary,
@@ -216,7 +217,7 @@ export const EloDiscord = {
     const regDelta = Math.abs(team1Summary.tierStats.rCount - team2Summary.tierStats.rCount);
 
     const muLeadTeam = team1Summary.avgMu >= team2Summary.avgMu ? 1 : 2;
-    const regMuLeadTeam = (team1Summary.avgRegMu || 0) >= (team2Summary.avgRegMu || 0) ? 1 : 2;
+    // const regMuLeadTeam = (team1Summary.avgRegMu || 0) >= (team2Summary.avgRegMu || 0) ? 1 : 2;
     const vetAdv = team1Summary.tierStats.rCount === team2Summary.tierStats.rCount ? 'Tie' : `Team ${team1Summary.tierStats.rCount > team2Summary.tierStats.rCount ? 1 : 2}`;
     
     const totalRegs = team1Summary.tierStats.rCount + team2Summary.tierStats.rCount;
@@ -227,17 +228,17 @@ export const EloDiscord = {
     const leadShare = Math.max(t1Share, t2Share);
     const vetAdvText = regDelta === 0 ? 'Tie' : `${vetAdv} Advantage`;
 
-    const isSevere = (muDelta > DISPARITY_THRESHOLDS.SEVERE_MU) || 
-                     (leadShare > DISPARITY_THRESHOLDS.SEVERE_SHARE) || 
-                     (muDelta > DISPARITY_THRESHOLDS.SEVERE_MIXED_MU && leadShare > DISPARITY_THRESHOLDS.SEVERE_MIXED_SHARE);
+    // const isSevere = (muDelta > DISPARITY_THRESHOLDS.SEVERE_MU) || 
+    //                  (leadShare > DISPARITY_THRESHOLDS.SEVERE_SHARE) || 
+    //                  (muDelta > DISPARITY_THRESHOLDS.SEVERE_MIXED_MU && leadShare > DISPARITY_THRESHOLDS.SEVERE_MIXED_SHARE);
     
-    const isMinor = muDelta > DISPARITY_THRESHOLDS.MINOR_MU || leadShare > DISPARITY_THRESHOLDS.MINOR_SHARE;
+    // const isMinor = muDelta > DISPARITY_THRESHOLDS.MINOR_MU || leadShare > DISPARITY_THRESHOLDS.MINOR_SHARE;
     
-    const leadTeamStatus = muDelta >= DISPARITY_THRESHOLDS.LEAD_MU_MIN ? muLeadTeam : (regDelta > 0 ? (team1Summary.tierStats.rCount > team2Summary.tierStats.rCount ? 1 : 2) : 1);
+    // const leadTeamStatus = muDelta >= DISPARITY_THRESHOLDS.LEAD_MU_MIN ? muLeadTeam : (regDelta > 0 ? (team1Summary.tierStats.rCount > team2Summary.tierStats.rCount ? 1 : 2) : 1);
     
-    const statusLine = isSevere ? `🔴 Severe Team ${leadTeamStatus} Advantage` : (isMinor ? `🟡 Minor Team ${leadTeamStatus} Advantage` : '🟢 Match Balanced');
+    // const statusLine = isSevere ? `🔴 Severe Team ${leadTeamStatus} Advantage` : (isMinor ? `🟡 Minor Team ${leadTeamStatus} Advantage` : '🟢 Match Balanced');
     const muAdvText = muDelta === 0 ? 'Balanced' : `Team ${muLeadTeam} Advantage`;
-    const mixedNote = muLeadTeam !== regMuLeadTeam ? '\n⚠️ **Mixed Advantage**' : '';
+    // const mixedNote = muLeadTeam !== regMuLeadTeam ? '\n⚠️ **Mixed Advantage**' : '';
 
     const formatRatingChanges = (stats) => {
       const muSign = stats.avgDeltaMu >= 0 ? '+' : '';
@@ -250,18 +251,17 @@ export const EloDiscord = {
     return {
       color: vUI.color,
       title: '🏆 Round Ended',
-      description: `${vUI.icon} **Veterancy: ${vUI.label}**\n*Percentage of established "Regular" players (10+ rounds) in the match.*\n\n${generateMatrixTable(team1Summary, team2Summary)}`,
+      description: `**Veterancy: ${vUI.icon} ${vUI.label}**\n*Percentage of established "Regular" players (10+ rounds) in the match.*\n\n${generateMatrixTable(team1Summary, team2Summary)}`,
       fields: [
         { name: 'Map / Layer', value: layerName || 'Unknown', inline: true },
         { name: 'Winner', value: `${winnerText} (+${ticketDiff} tickets)`, inline: true },
         { name: 'Duration', value: durationStr, inline: true },
-        { name: 'Player Count', value: `${playerCount}`, inline: true },
+        { name: 'Player Count', value: `${totalPlayerCount}`, inline: true },
         { 
           name: 'Disparity', 
           value: [
             `**Skill Balance:** ${getEloEmoji(muDelta)} ${muDelta.toFixed(2)}μ Elo diff (${muAdvText})`,
-            `**Regular Balance:** ${getRegEmoji(leadShare)} ${regDelta} Reg diff (${t1Share}% vs ${t2Share}% Share | ${vetAdvText})`,
-            `**Status:** ${statusLine}${mixedNote}`
+            `**Regular Balance:** ${getRegEmoji(leadShare)} ${regDelta} Reg diff (${t1Share}% vs ${t2Share}% Share | ${vetAdvText})`
           ].join('\n'), 
           inline: false 
         },
@@ -270,7 +270,7 @@ export const EloDiscord = {
           value: `**Team 1:** ${formatRatingChanges(team1Summary)}\n**Team 2:** ${formatRatingChanges(team2Summary)}`, 
           inline: false 
         },
-        { name: 'Players Updated', value: playerCount.toString(), inline: true },
+        { name: 'Players Updated', value: playersUpdatedCount.toString(), inline: true },
         { name: 'Processing Time', value: `${calculationDuration}ms`, inline: true },
         { name: 'Largest Rating Changes (Regulars Only)', value: moverLines.length > 0 ? moverLines.join('\n') : 'No regulars played this round', inline: false }
       ],
@@ -419,7 +419,7 @@ export const EloDiscord = {
     const matrixTable = generateMatrixTable(t1, t2);
 
     const muLeadTeam = t1.avgMu >= t2.avgMu ? 1 : 2;
-    const regMuLeadTeam = (t1.avgRegMu || 0) >= (t2.avgRegMu || 0) ? 1 : 2;
+    // const regMuLeadTeam = (t1.avgRegMu || 0) >= (t2.avgRegMu || 0) ? 1 : 2;
     
     const totalRegs = t1.tierStats.rCount + t2.tierStats.rCount;
     const leadRegs = Math.max(t1.tierStats.rCount, t2.tierStats.rCount);
@@ -429,19 +429,19 @@ export const EloDiscord = {
     const leadShare = Math.max(t1Share, t2Share);
     const vetAdvText = regDelta === 0 ? 'Tie' : `${veteranLead} Advantage`;
 
-    const isSevere = (muDelta > DISPARITY_THRESHOLDS.SEVERE_MU) || 
-                     (leadShare > DISPARITY_THRESHOLDS.SEVERE_SHARE) || 
-                     (muDelta > DISPARITY_THRESHOLDS.SEVERE_MIXED_MU && leadShare > DISPARITY_THRESHOLDS.SEVERE_MIXED_SHARE);
+    // const isSevere = (muDelta > DISPARITY_THRESHOLDS.SEVERE_MU) || 
+    //                  (leadShare > DISPARITY_THRESHOLDS.SEVERE_SHARE) || 
+    //                  (muDelta > DISPARITY_THRESHOLDS.SEVERE_MIXED_MU && leadShare > DISPARITY_THRESHOLDS.SEVERE_MIXED_SHARE);
     
-    const isMinor = muDelta > DISPARITY_THRESHOLDS.MINOR_MU || leadShare > DISPARITY_THRESHOLDS.MINOR_SHARE;
+    // const isMinor = muDelta > DISPARITY_THRESHOLDS.MINOR_MU || leadShare > DISPARITY_THRESHOLDS.MINOR_SHARE;
     
-    const leadTeamStatus = muDelta >= DISPARITY_THRESHOLDS.LEAD_MU_MIN ? muLeadTeam : (regDelta > 0 ? (t1.tierStats.rCount > t2.tierStats.rCount ? 1 : 2) : 1);
+    // const leadTeamStatus = muDelta >= DISPARITY_THRESHOLDS.LEAD_MU_MIN ? muLeadTeam : (regDelta > 0 ? (t1.tierStats.rCount > t2.tierStats.rCount ? 1 : 2) : 1);
 
-    const statusLine = isSevere ? `🔴 Severe Team ${leadTeamStatus} Advantage` : (isMinor ? `🟡 Minor Team ${leadTeamStatus} Advantage` : '🟢 Match Balanced');
+    // const statusLine = isSevere ? `🔴 Severe Team ${leadTeamStatus} Advantage` : (isMinor ? `🟡 Minor Team ${leadTeamStatus} Advantage` : '🟢 Match Balanced');
     const muAdvText = muDelta === 0 ? 'Balanced' : `Team ${muLeadTeam} Advantage`;
-    const mixedNote = muLeadTeam !== regMuLeadTeam 
-      ? `\n⚠️ **Mixed Advantage:** T${muLeadTeam} has better Overall Avg, but T${regMuLeadTeam} has stronger Regs.` 
-      : '';
+    // const mixedNote = muLeadTeam !== regMuLeadTeam 
+    //   ? `\n⚠️ **Mixed Advantage:** T${muLeadTeam} has better Overall Avg, but T${regMuLeadTeam} has stronger Regs.` 
+    //   : '';
 
     const title = type === 'manual'
       ? `📊 Live Round Info - ${layerName}`
@@ -450,14 +450,13 @@ export const EloDiscord = {
     const embed = {
       color: vUI.color,
       title: title,
-      description: `${vUI.icon} **Veterancy: ${vUI.label}**\n*Percentage of established "Regular" players (10+ rounds) in the match.*\n\n${matrixTable}`,
+      description: `**Veterancy: ${vUI.icon} ${vUI.label}**\n*Percentage of established "Regular" players (10+ rounds) in the match.*\n\n${matrixTable}`,
       fields: [
       {
           name: 'Match Health',
           value: [
             `**Regular Balance:** ${getRegEmoji(leadShare)} ${regDelta} Reg diff (${t1Share}% vs ${t2Share}% Share | ${vetAdvText})`,
-            `**Skill Balance:** ${getEloEmoji(muDelta)} ${muDelta.toFixed(2)}μ Elo diff (${muAdvText})`,
-            `**Status:** ${statusLine}${mixedNote}`
+            `**Skill Balance:** ${getEloEmoji(muDelta)} ${muDelta.toFixed(2)}μ Elo diff (${muAdvText})`
           ].join('\n'),
         inline: false
       },
