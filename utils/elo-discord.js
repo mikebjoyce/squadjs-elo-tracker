@@ -255,6 +255,7 @@ export const EloDiscord = {
         { name: 'Map / Layer', value: layerName || 'Unknown', inline: true },
         { name: 'Winner', value: `${winnerText} (+${ticketDiff} tickets)`, inline: true },
         { name: 'Duration', value: durationStr, inline: true },
+        { name: 'Player Count', value: `${playerCount}`, inline: true },
         { 
           name: 'Disparity', 
           value: [
@@ -402,7 +403,7 @@ export const EloDiscord = {
       };
     }
 
-    const { layerName, t1, t2, muDelta, regDelta, veteranLead, matchVeterancy, roundStartTime } = data;
+    const { layerName, t1, t2, muDelta, regDelta, veteranLead, matchVeterancy, roundStartTime, totalPlayerCount } = data;
 
     const vUI = getVeterancyUI(matchVeterancy);
     const matrixTable = generateMatrixTable(t1, t2);
@@ -449,7 +450,8 @@ export const EloDiscord = {
             `**Status:** ${statusLine}${mixedNote}`
           ].join('\n'),
         inline: false
-      }
+      },
+      { name: 'Player Count', value: `${totalPlayerCount}`, inline: true }
       ],
       timestamp: new Date().toISOString()
     };
@@ -520,7 +522,7 @@ export const EloDiscord = {
 
         if (sub === 'roundinfo') {
           try {
-            const data = this.buildRoundStartData();
+            const data = this.buildRoundStartData(); 
             const embed = EloDiscord.buildRoundStartEmbed(data, 'manual');
             await EloDiscord.sendDiscordMessage(message.channel, { embeds: [embed] });
           } catch (err) {
