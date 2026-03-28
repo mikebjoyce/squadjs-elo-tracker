@@ -86,7 +86,7 @@
   "minPlayersForElo": 80,
   "minRoundsForLeaderboard": 10,
   "roundStartEmbedDelayMs": 180000,
-  "ignoredGameModes": ["Seed", "Training"],
+  "ignoredGameModes": ["Seed", "Jensen"],
   "enablePublicIngameCommands": true,
   "discordClient": "discord",
   "discordAdminChannelID": "",
@@ -136,7 +136,7 @@ export default class EloTracker extends BasePlugin {
       minPlayersForElo: { default: 80, type: 'number' },
       minRoundsForLeaderboard: { default: 10, type: 'number' },
       roundStartEmbedDelayMs: { required: false, default: 180000, type: 'number' },
-      ignoredGameModes: { default: ['Seed', 'Training'], type: 'array' },
+      ignoredGameModes: { default: ['Seed', 'Jensen'], type: 'array' },
       enablePublicIngameCommands: { default: true, type: 'boolean' },
       discordClient: {
         required: false,
@@ -407,6 +407,25 @@ export default class EloTracker extends BasePlugin {
     }, 5000);
   }
 
+  isIgnoredMatch() {
+    const gameMode = this.server.currentLayer?.gamemode ?? '';
+    const layerName = this.server.currentLayer?.name ?? '';
+    
+    if (!gameMode && !layerName) return null;
+
+    const gameModeLower = gameMode.toLowerCase();
+    const layerNameLower = layerName.toLowerCase();
+
+    for (const ignoredMode of this.options.ignoredGameModes) {
+      const ignoredLower = ignoredMode.toLowerCase();
+      if (gameModeLower.includes(ignoredLower) || layerNameLower.includes(ignoredLower)) {
+        return ignoredMode;
+      }
+    }
+
+    return null;
+  }
+
   async onRoundEnded(data) {
     if (!this.ready) {
       Logger.verbose('EloTracker', 1, '[onRoundEnded] Fired but plugin not ready. Skipping.');
@@ -432,10 +451,11 @@ export default class EloTracker extends BasePlugin {
       return;
     }
 
-    if (gameMode && this.options.ignoredGameModes.some(m => m.toLowerCase() === gameMode.toLowerCase())) {
-      Logger.verbose('EloTracker', 1, `[onRoundEnded] Skipping ELO update: ignored game mode "${gameMode}".`);
+    const ignoredReason = this.isIgnoredMatch();
+    if (ignoredReason) {
+      Logger.verbose('EloTracker', 1, `[onRoundEnded] Skipping ELO update: ignored match type "${ignoredReason}".`);
       if (this.discordAdminChannel) {
-        const embed = EloDiscord.buildRoundSkippedEmbed(`Ignored game mode: ${gameMode}`, playerCount, this.server.currentLayer?.name ?? 'Unknown');
+        const embed = EloDiscord.buildRoundSkippedEmbed(`Ignored match type: ${ignoredReason}`, playerCount, this.server.currentLayer?.name ?? 'Unknown');
         await EloDiscord.sendDiscordMessage(this.discordAdminChannel, { embeds: [embed] });
       }
       return;
