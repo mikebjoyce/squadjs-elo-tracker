@@ -12,6 +12,18 @@ Designed for Squad servers to surface skill data, reward consistent players, and
 
 ## Core Features
 
+### Critical Notes
+
+#### deltaSigma Direction
+`deltaSigma` returned by the calculator is a **reduction value**, applied as:
+```
+newSigma = sigma - deltaSigma
+```
+This is intentional. Do not change this to addition.
+
+#### bulkUpsert Is Incremental
+`bulkUpsertPlayerStats()` **adds** to existing `wins`, `losses`, and `roundsPlayed` counts. It does not overwrite them. Do not pass cumulative totals — pass only the delta for the current round.
+
 * **TrueSkill Rating Engine**: Implements the full TrueSkill algorithm with team-based win, loss, and draw outcomes. Handles multi-player teams with per-player mu/sigma updates.
 
 * **Participation Weighting**: Rating changes are scaled by how long a player was actually on their team. Late joiners and early leavers receive proportionally smaller adjustments.
@@ -256,21 +268,6 @@ All player stats can be exported and restored via Discord:
 
 ---
 
-## Critical Notes
-
-### deltaSigma Direction
-
-`deltaSigma` returned by the calculator is a **reduction value**, applied as:
-```
-newSigma = sigma - deltaSigma
-```
-This is intentional. Do not change this to addition.
-
-### bulkUpsert Is Incremental
-
-`bulkUpsertPlayerStats()` **adds** to existing `wins`, `losses`, and `roundsPlayed` counts. It does not overwrite them. Do not pass cumulative totals — pass only the delta for the current round.
-
----
 
 ## Author
 
