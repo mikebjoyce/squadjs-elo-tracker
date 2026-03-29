@@ -634,6 +634,7 @@ export const EloDiscord = {
           }
           return;
         }
+      }
 
       // --- Public commands (available in both channels) ---
       if (sub === 'link') {
@@ -779,4 +780,4 @@ export const EloDiscord = {
       return await this.db.searchPlayer(identifier);
     };
   }
-};
+}
