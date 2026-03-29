@@ -198,4 +198,4 @@ This is intentional. **Do not change this to addition.**
 
 ---
 
-*Built for SquadJS — Surface skill. Reward consistency. Keep ratings honest.*
+*Built for SquadJS*
