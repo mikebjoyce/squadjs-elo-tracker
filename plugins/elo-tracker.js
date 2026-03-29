@@ -143,7 +143,7 @@ import { EloDiscord } from '../utils/elo-discord.js';
 import EloCommands from '../utils/elo-commands.js';
 
 export default class EloTracker extends BasePlugin {
-  static version = '0.2.5';
+  static version = '1.0.0';
 
   static get description() {
     return 'A SquadJS plugin that tracks player participation across rounds, computes individual ELO ratings using a TrueSkill-based algorithm, and persists all data via SQLite.';
@@ -207,10 +207,12 @@ export default class EloTracker extends BasePlugin {
     this.ready = false;
     this._roundStartEmbedPending = null;
     this.lastRoundSnapshot = null;
+    this.lastKnownGoodLayer = null;
 
     // Bound listeners — mirror TeamBalancer pattern exactly
     this.listeners = {};
     this.listeners.onNewGame = this.onNewGame.bind(this);
+    this.listeners.onLayerInfoUpdated = this.onLayerInfoUpdated.bind(this);
     this.listeners.onUpdatedPlayerInfo = this.onUpdatedPlayerInfo.bind(this);
     this.listeners.onRoundEnded = this.onRoundEnded.bind(this);
     this.listeners.onTeamBalancerScramble = this.onTeamBalancerScramble.bind(this);
@@ -283,6 +285,7 @@ export default class EloTracker extends BasePlugin {
 
     // Register listeners
     this.server.removeListener('NEW_GAME', this.listeners.onNewGame);
+    this.server.removeListener('UPDATED_LAYER_INFORMATION', this.listeners.onLayerInfoUpdated);
     this.server.removeListener('UPDATED_PLAYER_INFORMATION', this.listeners.onUpdatedPlayerInfo);
     this.server.removeListener('ROUND_ENDED', this.listeners.onRoundEnded);
     this.server.removeListener('TEAM_BALANCER_SCRAMBLE_EXECUTED', this.listeners.onTeamBalancerScramble);
@@ -290,11 +293,21 @@ export default class EloTracker extends BasePlugin {
     this.server.removeListener('CHAT_COMMAND:eloadmin', this.listeners.onEloAdminCommand);
 
     this.server.on('NEW_GAME', this.listeners.onNewGame);
+    this.server.on('UPDATED_LAYER_INFORMATION', this.listeners.onLayerInfoUpdated);
     this.server.on('UPDATED_PLAYER_INFORMATION', this.listeners.onUpdatedPlayerInfo);
     this.server.on('ROUND_ENDED', this.listeners.onRoundEnded);
     this.server.on('TEAM_BALANCER_SCRAMBLE_EXECUTED', this.listeners.onTeamBalancerScramble);
     this.server.on('CHAT_COMMAND:elo', this.listeners.onEloCommand);
     this.server.on('CHAT_COMMAND:eloadmin', this.listeners.onEloAdminCommand);
+
+    const layer = this.server.currentLayer;
+    if (layer && layer.gamemode) {
+      this.lastKnownGoodLayer = {
+        gamemode: layer.gamemode,
+        name: layer.name
+      };
+      Logger.verbose('EloTracker', 1, `[mount] Initialized lastKnownGoodLayer: ${layer.name} (${layer.gamemode})`);
+    }
     
     if (this.options.discordClient) {
       this.options.discordClient.removeListener('message', this.listeners.onDiscordMessage);
@@ -313,6 +326,7 @@ export default class EloTracker extends BasePlugin {
     Logger.verbose('EloTracker', 1, 'Unmounting plugin.');
 
     this.server.removeListener('NEW_GAME', this.listeners.onNewGame);
+    this.server.removeListener('UPDATED_LAYER_INFORMATION', this.listeners.onLayerInfoUpdated);
     this.server.removeListener('UPDATED_PLAYER_INFORMATION', this.listeners.onUpdatedPlayerInfo);
     this.server.removeListener('ROUND_ENDED', this.listeners.onRoundEnded);
     this.server.removeListener('TEAM_BALANCER_SCRAMBLE_EXECUTED', this.listeners.onTeamBalancerScramble);
@@ -332,10 +346,18 @@ export default class EloTracker extends BasePlugin {
    * Event Handlers
    */
 
-  async onNewGame() {
+  async onNewGame(data) {
     if (!this.ready) return;
 
     Logger.verbose('EloTracker', 1, 'NEW_GAME event received. Starting new session.');
+
+    if (data?.layer?.gamemode) {
+      this.lastKnownGoodLayer = {
+        gamemode: data.layer.gamemode,
+        name: data.layer.name
+      };
+    }
+
     const now = Date.now();
     this.session.startRound(now);
     await this.db.saveRoundStartTime(now);
@@ -439,11 +461,28 @@ export default class EloTracker extends BasePlugin {
     }, 5000);
   }
 
+  onLayerInfoUpdated() {
+    const layer = this.server.currentLayer;
+    if (!layer || !layer.gamemode) return;
+
+    this.lastKnownGoodLayer = {
+      gamemode: layer.gamemode,
+      name: layer.name
+    };
+  }
+
   isIgnoredMatch() {
-    const gameMode = this.server.currentLayer?.gamemode ?? '';
-    const layerName = this.server.currentLayer?.name ?? '';
+    let gameMode = this.server.currentLayer?.gamemode ?? '';
+    let layerName = this.server.currentLayer?.name ?? '';
     
-    if (!gameMode && !layerName) return null;
+    if (!gameMode && !layerName) {
+      if (this.lastKnownGoodLayer) {
+        gameMode = this.lastKnownGoodLayer.gamemode;
+        layerName = this.lastKnownGoodLayer.name;
+      } else {
+        return null;
+      }
+    }
 
     const gameModeLower = gameMode.toLowerCase();
     const layerNameLower = layerName.toLowerCase();
