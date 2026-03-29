@@ -3,100 +3,134 @@
  * ║                      ELO TRACKER PLUGIN                      ║
  * ╚═══════════════════════════════════════════════════════════════╝
  *
- * ─── IN-GAME COMMAND LIST ───────────────────────────────────────
+ * ─── PURPOSE ─────────────────────────────────────────────────────
  *
- * Public Commands:
- * !elo                           → Your ELO rating and rank.
- * !elo <name | steamID>          → Look up another player's rating.
- * !elo leaderboard               → Top 10 players by rating.
- * !elo help                      → Show available commands.
+ * Main SquadJS plugin entry point. Orchestrates session tracking,
+ * ELO calculation, database persistence, Discord integration, and
+ * in-game command handling across the round lifecycle.
  *
- * Admin Commands (ChatAdmin only):
- * !eloadmin status               → Plugin status and current round info.
- * !eloadmin reset <name|steamID> → Reset a player to default rating.
- * !eloadmin help                 → Show available commands.
+ * ─── EXPORTS ─────────────────────────────────────────────────────
  *
- * ─── DISCORD COMMAND LIST ───────────────────────────────────────
+ * EloTracker (default)
+ *   Extends BasePlugin. Registers and handles all SquadJS events.
+ *   Key public methods:
+ *     mount()                     — Initialises DB, session, Discord channels, and listeners.
+ *     unmount()                   — Removes all listeners and clears ready state.
+ *     getTeamElo(players)         — Returns average mu for a player array.
+ *     getRatingsByEosIDs(eosIDs)  — Batch DB lookup; returns Map<eosID, rating>.
+ *     buildRoundStartData()       — Builds team balance snapshot for Discord embeds.
  *
- * Public Commands (public + admin channel):
- * !elo                           → Your linked ELO rating and rank.
- * !elo <name | steamID | eosID>  → Look up another player.
- * !elo link <SteamID>            → Link your Discord to your SteamID.
- * !elo leaderboard               → Top 20 players by rating.
- * !elo explain                   → How the TrueSkill ranking system works.
- * !elo help                      → Show available commands.
+ * ─── DEPENDENCIES ────────────────────────────────────────────────
  *
- * Admin Commands (admin channel only):
- * !elo status                    → Plugin status and current round info.
- * !elo roundinfo                 → Live round snapshot: team ELO balance, top players, top squads.
- * !elo reset                     → Wipe ALL ratings + history (requires confirm).
- * !elo reset confirm             → Confirm a pending full reset.
- * !elo reset <name|steamID>      → Reset a single player to default rating.
- * !elo backup                    → Export all player stats as a JSON attachment.
- * !elo restore                   → Restore from a JSON backup (attach file).
+ * BasePlugin (./base-plugin.js)
+ *   SquadJS base class providing server, options, and connectors.
+ * Logger (../../core/logger.js)
+ *   Verbose logging throughout all event handlers.
+ * EloDatabase (../utils/elo-database.js)
+ *   SQLite persistence for player stats, round history, and plugin state.
+ * EloSessionManager (../utils/elo-session-manager.js)
+ *   In-memory session tracker for player team segments and participation.
+ * EloCalculator (../utils/elo-calculator.js)
+ *   TrueSkill math module for computing per-player mu/sigma deltas.
+ * EloDiscord (../utils/elo-discord.js)
+ *   Discord embed builders, send helper, and Discord command registration.
+ * EloCommands (../utils/elo-commands.js)
+ *   In-game chat command handlers for !elo and !eloadmin.
  *
- * ─── CONFIGURATION OPTIONS ──────────────────────────────────────
+ * ─── NOTES ───────────────────────────────────────────────────────
+ *
+ * - eloCache (Map<eosID, { mu, sigma, roundsPlayed, wins, losses }>)
+ *   holds connected players only. Populated on UPDATED_PLAYER_INFORMATION,
+ *   flushed on round end. All rating reads during a round use the cache.
+ * - Restart recovery: on mount, persisted roundStartTime is compared to
+ *   server.matchStartTime. If within 3 hours, the session resumes in-place.
+ *   Otherwise a fresh round starts.
+ * - Rating writes use bulkUpsertPlayerStats(), which INCREMENTS wins,
+ *   losses, and roundsPlayed. Pass only the round delta — not cumulative totals.
+ * - ignoredGameModes matches against both gamemode and layerName
+ *   (case-insensitive substring). Default: ["Seed", "Jensen"].
+ * - The round start embed posts after roundStartEmbedDelayMs (default 3 min)
+ *   via a deferred check on UPDATED_PLAYER_INFORMATION.
+ *
+ * ─── COMMANDS ────────────────────────────────────────────────────
+ *
+ * In-Game — Public (all channels):
+ *   !elo                           → Your ELO rating and rank.
+ *   !elo <name | steamID>          → Look up another player's rating.
+ *   !elo leaderboard               → Top 10 players by rating.
+ *   !elo help                      → Show available commands.
+ *
+ * In-Game — Admin (ChatAdmin only):
+ *   !eloadmin status               → Plugin status and current round info.
+ *   !eloadmin reset <name|steamID> → Reset a player to default rating.
+ *   !eloadmin help                 → Show available commands.
+ *
+ * Discord — Public (public + admin channel):
+ *   !elo                           → Your linked ELO rating and rank.
+ *   !elo <name | steamID | eosID>  → Look up another player.
+ *   !elo link <SteamID>            → Link your Discord to your SteamID.
+ *   !elo leaderboard               → Top 20 players by rating.
+ *   !elo explain                   → How the TrueSkill ranking system works.
+ *   !elo help                      → Show available commands.
+ *
+ * Discord — Admin (admin channel only):
+ *   !elo status                    → Plugin status and current round info.
+ *   !elo roundinfo                 → Live round snapshot: team balance and veterancy.
+ *   !elo reset                     → Wipe ALL ratings + history (requires confirm).
+ *   !elo reset confirm             → Confirm a pending full reset.
+ *   !elo reset <name|steamID>      → Reset a single player to default rating.
+ *   !elo backup                    → Export all player stats as a JSON attachment.
+ *   !elo restore                   → Restore from a JSON backup (attach file).
+ *
+ * ─── CONFIGURATION ───────────────────────────────────────────────
  *
  * Core:
- * database                       - Sequelize/SQLite connector for persistent storage.
- * enablePublicIngameCommands     - Enable/disable public !elo in-game commands.
- * eloLogPath                     - Path to output JSON lines file containing round outcome histories.
+ *   database                   - Sequelize/SQLite connector for persistent storage.
+ *   enablePublicIngameCommands - Enable/disable public !elo in-game commands.
+ *   eloLogPath                 - Path to JSONL file for round outcome history.
  *
  * ELO Algorithm:
- * defaultMu                      - Default TrueSkill μ for new players.
- * defaultSigma                   - Default TrueSkill σ for new players.
- * minParticipationRatio          - Min fraction of round played to earn ELO.
+ *   defaultMu                  - Starting skill estimate for new players (default: 25.0).
+ *   defaultSigma               - Starting uncertainty for new players (default: 8.333).
+ *   minParticipationRatio      - Min fraction of round played to earn ELO (default: 0.15).
  *
  * Eligibility:
- * minPlayersForElo               - Min server population to run ELO updates.
- * minRoundsForLeaderboard        - Min rounds played to appear in rankings.
- * ignoredGameModes               - Game modes excluded from ELO tracking.
+ *   minPlayersForElo           - Min server population to run ELO updates (default: 80).
+ *   minRoundsForLeaderboard    - Rounds required to appear in rankings (default: 10).
+ *   ignoredGameModes           - Game modes excluded from ELO tracking (default: ["Seed", "Jensen"]).
  *
  * Discord:
- * discordClient                  - Discord connector for logging.
- * discordAdminChannelID          - Channel ID for admin round summaries.
- * discordPublicChannelID         - Channel ID for public-facing output.
- * roundStartEmbedDelayMs         - Delay in ms after round start before posting the round info embed. Default: 180000 (3 min).
+ *   discordClient              - Discord connector name.
+ *   discordAdminChannelID      - Channel ID for admin round summaries.
+ *   discordPublicChannelID     - Channel ID for public-facing output.
+ *   roundStartEmbedDelayMs     - Delay after round start before posting embed (default: 180000).
  *
- * ─── CONFIGURATION EXAMPLE ──────────────────────────────────────
-
-// 1. Add connectors to the "connectors" object in config.json:
-
-"connectors": {
-  "sqlite": {
-    "dialect": "sqlite",
-    "storage": "squad-server.sqlite"
-  },
-  "discord": {
-    "connector": "discord",
-    "token": "YOUR_BOT_TOKEN"
-  }
-},
-
-// 2. Add the plugin configuration to the "plugins" array in config.json:
-
-{
-  "plugin": "EloTracker",
-  "enabled": true,
-  "database": "sqlite",
-  "eloLogPath": "./elo-match-log.jsonl",
-  "minParticipationRatio": 0.15,
-  "defaultMu": 25.0,
-  "defaultSigma": 8.333,
-  "minPlayersForElo": 80,
-  "minRoundsForLeaderboard": 10,
-  "roundStartEmbedDelayMs": 180000,
-  "ignoredGameModes": ["Seed", "Jensen"],
-  "enablePublicIngameCommands": true,
-  "discordClient": "discord",
-  "discordAdminChannelID": "",
-  "discordPublicChannelID": ""
-}
-
+ * "connectors": {
+ *   "sqlite": { "dialect": "sqlite", "storage": "squad-server.sqlite" },
+ *   "discord": { "connector": "discord", "token": "YOUR_BOT_TOKEN" }
+ * },
+ * {
+ *   "plugin": "EloTracker",
+ *   "enabled": true,
+ *   "database": "sqlite",
+ *   "eloLogPath": "./elo-match-log.jsonl",
+ *   "minParticipationRatio": 0.15,
+ *   "defaultMu": 25.0,
+ *   "defaultSigma": 8.333,
+ *   "minPlayersForElo": 80,
+ *   "minRoundsForLeaderboard": 10,
+ *   "roundStartEmbedDelayMs": 180000,
+ *   "ignoredGameModes": ["Seed", "Jensen"],
+ *   "enablePublicIngameCommands": true,
+ *   "discordClient": "discord",
+ *   "discordAdminChannelID": "",
+ *   "discordPublicChannelID": ""
+ * }
+ *
  * Author:
  * Discord: `real_slacker`
  *
- * ════════════════════════════════════════════════════════════════
+ * ═══════════════════════════════════════════════════════════════
  */
 
 import { appendFileSync } from 'fs';
@@ -566,7 +600,7 @@ export default class EloTracker extends BasePlugin {
         }
 
         // Update cache immediately
-        this.eloCache.set(player.eosID, { mu: newMu, sigma: newSigma });
+        this.eloCache.set(player.eosID, { mu: newMu, sigma: newSigma, roundsPlayed: rounds + 1 });
       });
 
       // Averages calculated outside of forEach loop after summation is complete

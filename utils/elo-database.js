@@ -7,23 +7,24 @@
  *
  * SQLite persistence layer for the EloTracker plugin. Manages player
  * stats, round history, leaderboard queries, and plugin state using
- * Sequelize ORM injected via the connectors argument.
+ * the Sequelize ORM injected via the connectors argument.
  *
  * ─── EXPORTS ─────────────────────────────────────────────────────
  *
  * EloDatabase (default)
  *   Class. Key public methods:
- *     initDB()                    — Sync models, seed PluginState row.
- *     getPlayerStats(eosID)       — Single player lookup by eosID.
- *     getPlayerStatsBatch(eosIDs) — Bulk lookup; returns a Map.
- *     searchPlayer(identifier)    — Fuzzy search by eosID/steamID/name.
+ *     initDB()                         — Sync models, seed PluginState row.
+ *     getPlayerStats(eosID)            — Single player lookup by eosID.
+ *     getPlayerStatsBatch(eosIDs)      — Bulk lookup; returns a Map.
+ *     searchPlayer(identifier)         — Fuzzy search by eosID/steamID/name.
  *     upsertPlayerStats(eosID, fields) — Single-record upsert.
  *     bulkUpsertPlayerStats(updates)   — Batch upsert in one transaction.
- *     insertRoundHistory(data)    — Append a round record.
+ *     insertRoundHistory(data)         — Append a round record.
  *     getLeaderboard(limit, minRounds) — Top players by mu.
  *     getPlayerRank(mu, minRounds)     — Rank of a given mu value.
- *     exportPlayerStats()         — Full table dump as plain objects.
- *     importPlayerStats(records)  — Bulk restore from export.
+ *     exportPlayerStats()              — Full table dump as plain objects.
+ *     importPlayerStats(records)       — Bulk restore from export.
+ *     pruneStaleEntries(minRounds)     — Delete old low-activity records.
  *
  * ─── DEPENDENCIES ────────────────────────────────────────────────
  *
@@ -35,15 +36,18 @@
  *
  * ─── NOTES ───────────────────────────────────────────────────────
  *
- * - All operations go through _executeWithRetry() — retries up to 5x
+ * - All operations go through _executeWithRetry() — retries up to 5×
  *   on SQLITE_BUSY with 200ms + random jitter backoff.
- * - bulkUpsertPlayerStats() uses INCREMENTAL updates for wins,
- *   losses, and roundsPlayed (adds to existing). All other fields
- *   are overwritten. Do not pass already-cumulative totals.
- * - Models are stored on this.models and referenced externally in
- *   elo-discord.js (e.g. this.db.models.PlayerStats.destroy).
+ * - A promise-chain mutex is attached to the Sequelize instance to
+ *   serialise writes and prevent concurrent lock contention.
+ * - bulkUpsertPlayerStats() INCREMENTS wins, losses, and roundsPlayed.
+ *   All other fields are overwritten. Do not pass cumulative totals.
+ * - Models are stored on this.models and may be referenced externally
+ *   (e.g. this.db.models.PlayerStats.destroy in elo-discord.js).
  * - Sequelize.BIGINT is used for timestamps to avoid JS integer
  *   overflow with Unix ms values.
+ * - pruneStaleEntries() removes provisional players unseen for 30 days
+ *   and calibrated players unseen for 90 days.
  *
  * Author:
  * Discord: `real_slacker`

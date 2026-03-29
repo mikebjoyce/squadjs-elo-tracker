@@ -27,11 +27,11 @@
  * ─── NOTES ───────────────────────────────────────────────────────
  *
  * - Methods are attached directly onto the tracker instance, not
- *   returned as standalone functions. They rely on tracker's
- *   this.server, this.db, this.session, this.eloCache, this.options.
- * - onEloAdminCommand enforces ChatAdmin channel restriction
- *   internally. The caller must still register the event listener.
- * - !eloadmin reset resets mu, sigma, wins, losses, roundsPlayed
+ *   returned as standalone functions. They rely on tracker.server,
+ *   tracker.db, tracker.session, tracker.eloCache, and tracker.options.
+ * - onEloAdminCommand enforces ChatAdmin channel restriction internally.
+ *   The caller must still register the event listener.
+ * - !eloadmin reset resets mu, sigma, wins, losses, and roundsPlayed
  *   to defaults. It does NOT delete the DB record.
  * - !elo with no sub-command falls through to the player lookup
  *   path using the full args string as the identifier.

@@ -13,12 +13,16 @@
  *
  * EloCalculator (default)
  *   Static-only class. All methods and constants are static.
- *   computeTeamUpdate(team1, team2, outcome)
- *     Core update method — returns raw deltaMu/deltaSigma per player.
- *   getDefaultRating()
- *     Returns the default { mu, sigma } for a new player.
- *   BETA, DRAW_PROBABILITY
- *     Configurable static constants exposed for external tuning.
+ *     computeTeamUpdate(team1, team2, outcome)
+ *       Core update method — returns raw deltaMu/deltaSigma per player.
+ *     getDefaultRating()
+ *       Returns the default { mu, sigma } for a new player.
+ *     BETA, DRAW_PROBABILITY
+ *       Configurable static constants exposed for external tuning.
+ *
+ * ─── DEPENDENCIES ────────────────────────────────────────────────
+ *
+ * None.
  *
  * ─── NOTES ───────────────────────────────────────────────────────
  *
@@ -26,11 +30,14 @@
  *   approximation. Both are fast and accurate enough for TrueSkill.
  * - computeTeamUpdate() returns RAW deltas. The caller must scale by
  *   participationRatio before writing to the database.
- * - deltaSigma is a REDUCTION value. It is applied as:
+ * - deltaSigma is a REDUCTION value, applied as:
  *     newSigma = sigma - deltaSigma
  *   Do NOT change the subtraction to addition.
- * - c === 0 guard prevents a divide-by-zero when all players have
- *   zero sigma and BETA is also zero (edge case, should not occur).
+ * - c === 0 guard prevents divide-by-zero when all players have zero
+ *   sigma and BETA is also zero (edge case; should not occur in practice).
+ * - teamMu is computed as the MEAN across players, not the sum.
+ *   Per-player deltaMu is scaled by 1/n to match. For equal team sizes
+ *   this is mathematically identical to the sum model.
  *
  * Author:
  * Discord: `real_slacker`

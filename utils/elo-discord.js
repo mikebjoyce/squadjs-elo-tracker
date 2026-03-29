@@ -16,12 +16,13 @@
  *     sendDiscordMessage(channel, content, suppressErrors)
  *       Resilient send — normalises embed/embeds, handles 429 with
  *       one automatic retry, and includes a Discord.js v12 fallback.
- *     buildRoundSummaryEmbed(data)   — Post-round results embed.
- *     buildPlayerStatsEmbed(...)     — Per-player rank and stats embed.
- *     buildLeaderboardEmbed(...)     — Top-N leaderboard embed.
- *     buildAdminConfirmEmbed(...)    — Admin action confirmation embed.
- *     buildErrorEmbed(context, err)  — Error embed with stack trace.
- *     buildRoundSkippedEmbed(...)    — Round-skipped notification embed.
+ *     buildRoundSummaryEmbed(data)      — Post-round results embed.
+ *     buildRoundStartEmbed(data, mode)  — Pre-round team balance embed.
+ *     buildPlayerStatsEmbed(...)        — Per-player rank and stats embed.
+ *     buildLeaderboardEmbed(...)        — Top-N leaderboard embed.
+ *     buildAdminConfirmEmbed(...)       — Admin action confirmation embed.
+ *     buildErrorEmbed(context, err)     — Error embed with stack trace.
+ *     buildRoundSkippedEmbed(...)       — Round-skipped notification embed.
  *     registerDiscordCommands(tracker)
  *       Attaches onDiscordMessage and _findPlayerByIdentifier onto
  *       the tracker instance.
@@ -33,18 +34,17 @@
  *
  * ─── NOTES ───────────────────────────────────────────────────────
  *
- * - sendDiscordMessage normalises { embed } -> { embeds: [embed] }
+ * - sendDiscordMessage normalises { embed } → { embeds: [embed] }
  *   for Discord.js v13+ compatibility, then falls back to the legacy
  *   { embed } shape on a 'Cannot send an empty message' error.
  * - Rate limit (429) handling reads retryAfter from the error object
  *   or the retry-after header. Only one retry is attempted.
  * - registerDiscordCommands() mutates the tracker instance. It relies
- *   on tracker's this.db, this.session, this.eloCache, this.options,
- *   this.discordAdminChannel, and this.discordPublicChannel.
- * - Admin commands (!elo reset, backup, restore, status) are gated to
- *   the configured discordAdminChannelID. Public commands are gated
- *   to discordPublicChannelID. Messages outside both channels are
- *   silently ignored.
+ *   on tracker.db, tracker.session, tracker.eloCache, tracker.options,
+ *   tracker.discordAdminChannel, and tracker.discordPublicChannel.
+ * - Admin commands (!elo reset, backup, restore, status, roundinfo) are
+ *   gated to discordAdminChannelID. Public commands are gated to
+ *   discordPublicChannelID. Messages outside both channels are ignored.
  * - !elo reset (full wipe) requires a two-step confirm with a 30s
  *   timeout. Pending state is stored on tracker._resetConfirmPending.
  * - formatDuration is a local helper (not exported).
@@ -634,69 +634,6 @@ export const EloDiscord = {
           }
           return;
         }
-
-      //   if (sub === 'exportlogs') {
-      //       try {
-      //           const cutoff = Date.now() - (60 * 24 * 60 * 60 * 1000); // 60 days
-      //           let before = undefined;
-      //           const collected = [];
-
-      //           while (true) {
-      //           const batch = await message.channel.messages.fetch({
-      //               limit: 100,
-      //               before
-      //           });
-
-      //           if (!batch.size) break; // ONLY stop when no more messages
-
-      //           for (const msg of batch.values()) {
-      //               // store only messages within range
-      //               if (msg.createdTimestamp >= cutoff) {
-      //               collected.push({
-      //                   id: msg.id,
-      //                   timestamp: msg.createdTimestamp,
-      //                   author: {
-      //                   id: msg.author.id,
-      //                   username: msg.author.username
-      //                   },
-      //                   content: msg.content,
-      //                   embeds: msg.embeds?.map(e => e.toJSON?.() ?? e) ?? [],
-      //                   attachments: [...msg.attachments.values()].map(a => ({
-      //                   name: a.name,
-      //                   url: a.url
-      //                   }))
-      //               });
-      //               }
-      //           }
-
-      //           // advance cursor to oldest message in batch
-      //           before = batch.last().id;
-      //           }
-                
-      //           const payload = JSON.stringify({
-      //           exportedAt: Date.now(),
-      //           messageCount: collected.length,
-      //           messages: collected
-      //           }, null, 2);
-
-      //           const buffer = Buffer.from(payload, 'utf-8');
-      //           const filename = `discord-log-export-${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
-
-      //           await message.channel.send({
-      //           content: `📦 Log export complete — ${collected.length} messages`,
-      //           files: [{ attachment: buffer, name: filename }]
-      //           });
-
-      //       } catch (err) {
-      //           await EloDiscord.sendDiscordMessage(
-      //           message.channel,
-      //           { embeds: [EloDiscord.buildErrorEmbed('Log Export', err)] }
-      //           );
-      //       }
-      //       return;
-      //   }
-      // 
-      }
 
       // --- Public commands (available in both channels) ---
       if (sub === 'link') {
