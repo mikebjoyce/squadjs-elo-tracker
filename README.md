@@ -55,7 +55,7 @@ A dynamic uncertainty floor (τ/tau) prevents sigma from reaching zero, ensuring
 
 **[squadjs-team-balancer](https://github.com/mikebjoyce/squadjs-team-balancer)**
 
-When `useEloForBalance: true` is set in TeamBalancer, it pulls live mu ratings and veteran player counts from EloTracker at scramble time and factors them into swap scoring — preventing skill stacks from reforming after a scramble.
+When `useEloForBalance: true` is set in TeamBalancer, its scoring function switches to an ELO-weighted branch. It pulls live mu ratings and regular player counts from EloTracker at scramble time, evaluating mu difference, regular parity, and numerical balance (replacing its standard heuristic penalties). This prevents skill stacks from reforming after a scramble.
 
 No additional configuration is needed on the EloTracker side. TeamBalancer finds the EloTracker instance automatically at runtime and falls back to pure numerical balance silently if EloTracker data is unavailable.
 
