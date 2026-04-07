@@ -342,7 +342,7 @@ export const EloDiscord = {
         },
         {
           name: 'Glossary',
-          value: 'μ (Mu) = Skill Level | σ (Sigma) = Uncertainty | Veterancy = % of Regulars',
+          value: 'μ (Mu) = Skill Level | σ (Sigma) = Uncertainty',
           inline: false
         }
       ],

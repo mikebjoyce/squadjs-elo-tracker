@@ -215,6 +215,7 @@ export default class EloTracker extends BasePlugin {
     this.listeners.onLayerInfoUpdated = this.onLayerInfoUpdated.bind(this);
     this.listeners.onUpdatedPlayerInfo = this.onUpdatedPlayerInfo.bind(this);
     this.listeners.onRoundEnded = this.onRoundEnded.bind(this);
+    this.listeners.onServerInfoUpdated = this.onServerInfoUpdated.bind(this);
     this.listeners.onTeamBalancerScramble = this.onTeamBalancerScramble.bind(this);
     EloDiscord.registerDiscordCommands(this);
     this.listeners.onDiscordMessage = this.onDiscordMessage.bind(this);
@@ -288,6 +289,7 @@ export default class EloTracker extends BasePlugin {
     this.server.removeListener('UPDATED_LAYER_INFORMATION', this.listeners.onLayerInfoUpdated);
     this.server.removeListener('UPDATED_PLAYER_INFORMATION', this.listeners.onUpdatedPlayerInfo);
     this.server.removeListener('ROUND_ENDED', this.listeners.onRoundEnded);
+    this.server.removeListener('UPDATED_SERVER_INFORMATION', this.listeners.onServerInfoUpdated);
     this.server.removeListener('TEAM_BALANCER_SCRAMBLE_EXECUTED', this.listeners.onTeamBalancerScramble);
     this.server.removeListener('CHAT_COMMAND:elo', this.listeners.onEloCommand);
     this.server.removeListener('CHAT_COMMAND:eloadmin', this.listeners.onEloAdminCommand);
@@ -296,6 +298,7 @@ export default class EloTracker extends BasePlugin {
     this.server.on('UPDATED_LAYER_INFORMATION', this.listeners.onLayerInfoUpdated);
     this.server.on('UPDATED_PLAYER_INFORMATION', this.listeners.onUpdatedPlayerInfo);
     this.server.on('ROUND_ENDED', this.listeners.onRoundEnded);
+    this.server.on('UPDATED_SERVER_INFORMATION', this.listeners.onServerInfoUpdated);
     this.server.on('TEAM_BALANCER_SCRAMBLE_EXECUTED', this.listeners.onTeamBalancerScramble);
     this.server.on('CHAT_COMMAND:elo', this.listeners.onEloCommand);
     this.server.on('CHAT_COMMAND:eloadmin', this.listeners.onEloAdminCommand);
@@ -324,6 +327,7 @@ export default class EloTracker extends BasePlugin {
     this.server.removeListener('UPDATED_LAYER_INFORMATION', this.listeners.onLayerInfoUpdated);
     this.server.removeListener('UPDATED_PLAYER_INFORMATION', this.listeners.onUpdatedPlayerInfo);
     this.server.removeListener('ROUND_ENDED', this.listeners.onRoundEnded);
+    this.server.removeListener('UPDATED_SERVER_INFORMATION', this.listeners.onServerInfoUpdated);
     this.server.removeListener('TEAM_BALANCER_SCRAMBLE_EXECUTED', this.listeners.onTeamBalancerScramble);
     this.server.removeListener('CHAT_COMMAND:elo', this.listeners.onEloCommand);
     this.server.removeListener('CHAT_COMMAND:eloadmin', this.listeners.onEloAdminCommand);
@@ -340,6 +344,21 @@ export default class EloTracker extends BasePlugin {
   /**
    * Event Handlers
    */
+
+  inferGameMode(layerName) {
+    if (!layerName) return 'Unknown';
+    const name = layerName.toLowerCase();
+    if (name.includes('seed')) return 'Seed';
+    if (name.includes('invasion')) return 'Invasion';
+    if (name.includes('raas')) return 'RAAS';
+    if (name.includes('aas')) return 'AAS';
+    if (name.includes('tc')) return 'TC';
+    if (name.includes('skirmish')) return 'Skirmish';
+    if (name.includes('insurgency')) return 'Insurgency';
+    if (name.includes('destruction')) return 'Destruction';
+    if (name.includes('jensen')) return 'Jensen';
+    return 'Unknown';
+  }
 
   async resolveLayerInfo(layerData, source = 'Unknown') {
     let layer = layerData;
@@ -362,12 +381,13 @@ export default class EloTracker extends BasePlugin {
 
     if (typeof layer === 'string') {
       name = layer;
-      Logger.verbose('EloTracker', 2, `[${source}] Layer is a string ("${layer}"), gamemode unknown.`);
+      gamemode = this.inferGameMode(name);
+      Logger.verbose('EloTracker', 4, `[${source}] Layer is a string ("${layer}"), inferred gamemode: ${gamemode}.`);
     } else if (typeof layer === 'object') {
-      gamemode = layer.gamemode || 'Unknown';
       name = layer.name || layer.layer || 'Unknown';
+      gamemode = layer.gamemode || this.inferGameMode(name);
       if (gamemode === 'Unknown' || name === 'Unknown') {
-         Logger.verbose('EloTracker', 2, `[${source}] Layer object missing properties: ${JSON.stringify(layer)}`);
+         Logger.verbose('EloTracker', 4, `[${source}] Layer object missing properties: ${JSON.stringify(layer)}`);
       }
     }
 
@@ -493,6 +513,16 @@ export default class EloTracker extends BasePlugin {
       await this.resolveLayerInfo(this.server.currentLayer, 'onLayerInfoUpdated');
     } catch (err) {
       Logger.verbose('EloTracker', 4, `Error in onLayerInfoUpdated: ${err.message}`);
+    }
+  }
+
+  async onServerInfoUpdated(info) {
+    try {
+      if (info && info.currentLayer) {
+        await this.resolveLayerInfo(info.currentLayer, 'onServerInfoUpdated');
+      }
+    } catch (err) {
+      Logger.verbose('EloTracker', 4, `Error in onServerInfoUpdated: ${err.message}`);
     }
   }
 
