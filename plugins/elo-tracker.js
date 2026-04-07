@@ -143,7 +143,7 @@ import { EloDiscord } from '../utils/elo-discord.js';
 import EloCommands from '../utils/elo-commands.js';
 
 export default class EloTracker extends BasePlugin {
-  static version = '1.0.0';
+  static version = '1.0.1';
 
   static get description() {
     return 'A SquadJS plugin that tracks player participation across rounds, computes individual ELO ratings using a TrueSkill-based algorithm, and persists all data via SQLite.';
@@ -300,13 +300,8 @@ export default class EloTracker extends BasePlugin {
     this.server.on('CHAT_COMMAND:elo', this.listeners.onEloCommand);
     this.server.on('CHAT_COMMAND:eloadmin', this.listeners.onEloAdminCommand);
 
-    const layer = this.server.currentLayer;
-    if (layer && layer.gamemode) {
-      this.lastKnownGoodLayer = {
-        gamemode: layer.gamemode,
-        name: layer.name
-      };
-      Logger.verbose('EloTracker', 1, `[mount] Initialized lastKnownGoodLayer: ${layer.name} (${layer.gamemode})`);
+    if (this.server.currentLayer) {
+      await this.resolveLayerInfo(this.server.currentLayer, 'mount');
     }
     
     if (this.options.discordClient) {
@@ -346,16 +341,48 @@ export default class EloTracker extends BasePlugin {
    * Event Handlers
    */
 
+  async resolveLayerInfo(layerData, source = 'Unknown') {
+    let layer = layerData;
+    if (layer instanceof Promise) {
+      try {
+        layer = await layer;
+      } catch (err) {
+        Logger.verbose('EloTracker', 1, `[${source}] Failed to resolve layer promise: ${err.message}`);
+        layer = null;
+      }
+    }
+    
+    if (!layer) {
+      Logger.verbose('EloTracker', 2, `[${source}] Layer object is completely null or undefined.`);
+      return false;
+    }
+    
+    let gamemode = 'Unknown';
+    let name = 'Unknown';
+
+    if (typeof layer === 'string') {
+      name = layer;
+      Logger.verbose('EloTracker', 2, `[${source}] Layer is a string ("${layer}"), gamemode unknown.`);
+    } else if (typeof layer === 'object') {
+      gamemode = layer.gamemode || 'Unknown';
+      name = layer.name || layer.layer || 'Unknown';
+      if (gamemode === 'Unknown' || name === 'Unknown') {
+         Logger.verbose('EloTracker', 2, `[${source}] Layer object missing properties: ${JSON.stringify(layer)}`);
+      }
+    }
+
+    this.lastKnownGoodLayer = { gamemode, name };
+    Logger.verbose('EloTracker', 4, `[${source}] Layer info updated: ${gamemode} / ${name}`);
+    return true;
+  }
+
   async onNewGame(data) {
     if (!this.ready) return;
 
     Logger.verbose('EloTracker', 1, 'NEW_GAME event received. Starting new session.');
 
-    if (data?.layer?.gamemode) {
-      this.lastKnownGoodLayer = {
-        gamemode: data.layer.gamemode,
-        name: data.layer.name
-      };
+    if (data && data.layer) {
+      await this.resolveLayerInfo(data.layer, 'onNewGame');
     }
 
     const now = Date.now();
@@ -461,14 +488,12 @@ export default class EloTracker extends BasePlugin {
     }, 5000);
   }
 
-  onLayerInfoUpdated() {
-    const layer = this.server.currentLayer;
-    if (!layer || !layer.gamemode) return;
-
-    this.lastKnownGoodLayer = {
-      gamemode: layer.gamemode,
-      name: layer.name
-    };
+  async onLayerInfoUpdated() {
+    try {
+      await this.resolveLayerInfo(this.server.currentLayer, 'onLayerInfoUpdated');
+    } catch (err) {
+      Logger.verbose('EloTracker', 4, `Error in onLayerInfoUpdated: ${err.message}`);
+    }
   }
 
   isIgnoredMatch() {
