@@ -20,8 +20,9 @@
  *     upsertPlayerStats(eosID, fields) — Single-record upsert.
  *     bulkUpsertPlayerStats(updates)   — Batch upsert in one transaction.
  *     insertRoundHistory(data)         — Append a round record.
- *     getLeaderboard(limit, minRounds) — Top players by mu.
+ *     getLeaderboard(limit, minRounds, offset) — Top players by mu, with optional offset.
  *     getPlayerRank(mu, minRounds)     — Rank of a given mu value.
+ *     getTotalRankedPlayers(minRounds) — Count of players meeting the minimum rounds threshold.
  *     exportPlayerStats()              — Full table dump as plain objects.
  *     importPlayerStats(records)       — Bulk restore from export.
  *     pruneStaleEntries(minRounds)     — Delete old low-activity records.
@@ -383,7 +384,7 @@ export default class EloDatabase {
     }
   }
 
-  async getLeaderboard(limit = 20, minRounds = 10) {
+  async getLeaderboard(limit = 20, minRounds = 10, offset = 0) {
     if (!this.sequelize) return [];
     try {
       return await this._executeWithRetry(async () => {
@@ -394,7 +395,8 @@ export default class EloDatabase {
             }
           },
           order: [['mu', 'DESC']],
-          limit: limit
+          limit: limit,
+          offset: offset
         });
         return records.map((r) => r.toJSON());
       });
@@ -433,6 +435,28 @@ export default class EloDatabase {
         'EloTracker',
         1,
         `[DB] Error fetching total players: ${error.message}`
+      );
+      return 0;
+    }
+  }
+
+  async getTotalRankedPlayers(minRounds = 10) {
+    if (!this.sequelize) return 0;
+    try {
+      return await this._executeWithRetry(async () => {
+        return await this.models.PlayerStats.count({
+          where: {
+            roundsPlayed: {
+              [Sequelize.Op.gte]: minRounds
+            }
+          }
+        });
+      });
+    } catch (error) {
+      Logger.verbose(
+        'EloTracker',
+        1,
+        `[DB] Error fetching total ranked players: ${error.message}`
       );
       return 0;
     }

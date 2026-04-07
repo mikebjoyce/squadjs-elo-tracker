@@ -66,10 +66,10 @@
  *   !eloadmin help                 → Show available commands.
  *
  * Discord — Public (public + admin channel):
- *   !elo                           → Your linked ELO rating and rank.
+ *   !elo                           → Your linked ELO rating, rank, and local leaderboard.
  *   !elo <name | steamID | eosID>  → Look up another player.
  *   !elo link <SteamID>            → Link your Discord to your SteamID.
- *   !elo leaderboard               → Top 20 players by rating.
+ *   !elo leaderboard [rank]        → Show 25 players, optionally centered around a specific rank.
  *   !elo explain                   → How the TrueSkill ranking system works.
  *   !elo help                      → Show available commands.
  *
@@ -143,7 +143,7 @@ import { EloDiscord } from '../utils/elo-discord.js';
 import EloCommands from '../utils/elo-commands.js';
 
 export default class EloTracker extends BasePlugin {
-  static version = '1.0.1';
+  static version = '1.0.2';
 
   static get description() {
     return 'A SquadJS plugin that tracks player participation across rounds, computes individual ELO ratings using a TrueSkill-based algorithm, and persists all data via SQLite.';

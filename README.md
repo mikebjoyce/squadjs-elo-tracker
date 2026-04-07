@@ -137,10 +137,10 @@ squad-server/
 
 **Public:**
 
-- `!elo` — Look up your own linked stats.
+- `!elo` — Look up your own linked stats, including a personal local leaderboard.
 - `!elo <name | steamID | eosID>` — Look up another player.
 - `!elo link <SteamID>` — Link Discord to SteamID (auto-deletes for privacy).
-- `!elo leaderboard` — Top 20 players.
+- `!elo leaderboard [rank]` — Show 25 players, optionally centered around a specific rank.
 - `!elo explain` — Explains the algorithm and symbols.
 
 **Admin (admin channel only):**

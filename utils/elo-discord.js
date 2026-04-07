@@ -288,12 +288,12 @@ export const EloDiscord = {
     };
   },
 
-  buildPlayerStatsEmbed(player, rank, totalPlayers, provisional = false) {
+  buildPlayerStatsEmbed(player, rank, totalRanked, totalPlayers, provisional = false, localLeaderboard = null, minRounds = 10) {
     const { name, mu, sigma, wins, losses, roundsPlayed } = player;
 
     let topPercent;
     if (!provisional) {
-      const rawPercent = ((rank - 1) / (totalPlayers > 1 ? totalPlayers - 1 : 1)) * 100;
+      const rawPercent = ((rank - 1) / (totalRanked > 1 ? totalRanked - 1 : 1)) * 100;
       if (rank === 1) topPercent = '0.1';
       else if (rawPercent < 1) topPercent = Math.max(0.1, rawPercent).toFixed(1);
       else topPercent = Math.round(rawPercent);
@@ -312,54 +312,79 @@ export const EloDiscord = {
       winRateStr
     ].filter(Boolean).join('\n');
 
+    const totalRankedFmt = totalRanked.toLocaleString();
+    const totalPlayersFmt = totalPlayers.toLocaleString();
+
     const description = provisional
-      ? `**Provisional** — ${roundsPlayed} rounds played. Rank visible after ${totalPlayers} rounds.`
-      : (totalPlayers > 0 ? `Rank **#${rank}** of **${totalPlayers}** players.` : 'Unranked');
+      ? `**Provisional** — ${roundsPlayed} rounds played. Rank visible after ${minRounds} rounds. (${totalPlayersFmt} total tracked)`
+      : (totalRanked > 0 ? `Rank **#${rank}** of **${totalRankedFmt}** ranked players (${totalPlayersFmt} total).` : 'Unranked');
 
     const skillRatingValue = provisional
       ? `**${mu.toFixed(1)} μ** (Calibrating...)`
       : `**${mu.toFixed(1)} μ** (Top ${topPercent}% of players)`;
 
+    const fields = [
+      {
+        name: 'Skill Rating',
+        value: skillRatingValue,
+        inline: false
+      },
+      {
+        name: 'Match History',
+        value: matchHistoryValue,
+        inline: false
+      },
+      {
+        name: 'Reliability',
+        value: `${reliability} (σ ${sigma.toFixed(2)})`,
+        inline: false
+      },
+      {
+        name: 'Glossary',
+        value: 'μ (Mu) = Skill Level | σ (Sigma) = Uncertainty',
+        inline: false
+      }
+    ];
+
+    if (localLeaderboard && localLeaderboard.length > 0) {
+      const localLines = localLeaderboard.map(p => {
+        const line = `#${p.actualRank} ${p.name} — μ ${p.mu.toFixed(1)}`;
+        if (p.eosID === player.eosID) {
+          return `**${line}** 👈`;
+        }
+        return line;
+      });
+      fields.push({
+        name: 'Local Leaderboard',
+        value: localLines.join('\n'),
+        inline: false
+      });
+    }
+
     return {
       color: 0x3498db,
       title: `📊 Player Stats for ${name}`,
       description: description,
-      fields: [
-        {
-          name: 'Skill Rating',
-          value: skillRatingValue,
-          inline: false
-        },
-        {
-          name: 'Match History',
-          value: matchHistoryValue,
-          inline: false
-        },
-        {
-          name: 'Reliability',
-          value: `${reliability} (σ ${sigma.toFixed(2)})`,
-          inline: false
-        },
-        {
-          name: 'Glossary',
-          value: 'μ (Mu) = Skill Level | σ (Sigma) = Uncertainty',
-          inline: false
-        }
-      ],
+      fields: fields,
       timestamp: new Date().toISOString()
     };
   },
 
-  buildLeaderboardEmbed(players, limit) {
+  buildLeaderboardEmbed(players, limit, startRank = 1, totalRanked = 0, totalPlayers = 0) {
     const lines = players.slice(0, limit).map((p, i) => {
-      const rank = (i + 1).toString().padStart(2, ' ');
+      const rank = (startRank + i).toString().padStart(2, ' ');
       return `#${rank} ${p.name} — μ ${p.mu.toFixed(1)} (W/L: ${p.wins}/${p.losses})`;
     });
 
+    const endRank = startRank + players.length - 1;
+    const rankRangeText = players.length > 0 ? `(Ranks ${startRank}-${endRank})` : '(Empty)';
+    const totalRankedFmt = totalRanked.toLocaleString();
+    const totalPlayersFmt = totalPlayers.toLocaleString();
+
     return {
       color: 0xf39c12,
-      title: `🏆 Top ${limit} Leaderboard`,
-      description: `\`\`\`\n${lines.join('\n')}\n\`\`\``,
+      title: `🏆 Leaderboard ${rankRangeText}`,
+      description: `Out of **${totalRankedFmt}** ranked players (${totalPlayersFmt} total)\n\`\`\`\n${lines.join('\n')}\n\`\`\``,
       timestamp: new Date().toISOString()
     };
   },
@@ -721,10 +746,10 @@ export const EloDiscord = {
             {
               name: '🌐 Public Commands',
               value: [
-                '`!elo` or `!elo me` — Look up your own linked ELO rating',
+                '`!elo` or `!elo me` — Look up your own linked ELO rating and local leaderboard',
                 '`!elo <name | steamID | eosID>` — Look up another player',
                 '`!elo link <SteamID>` — Link your Discord account to your SteamID',
-                '`!elo leaderboard` — Top 20 players by rating',
+                '`!elo leaderboard [rank]` — Show 25 players, optionally centered around a specific rank',
                 '`!elo explain` — Explains the ranking algorithm and symbols',
                 '`!elo help` — Show this message'
               ].join('\n'),
@@ -760,14 +785,44 @@ export const EloDiscord = {
         const minRounds = this.options.minRoundsForLeaderboard;
         const provisional = player.roundsPlayed < minRounds;
         const rank = provisional ? null : await this.db.getPlayerRank(player.mu, minRounds);
-        const totalPlayers = provisional ? minRounds : await this.db.getTotalPlayers();
-        await EloDiscord.sendDiscordMessage(message.channel, { embeds: [EloDiscord.buildPlayerStatsEmbed(player, rank, totalPlayers, provisional)] });
+        const totalRanked = await this.db.getTotalRankedPlayers(minRounds);
+        const totalPlayers = await this.db.getTotalPlayers();
+
+        let localLeaderboard = null;
+        if (!provisional && rank !== null) {
+          const limit = 5;
+          const offset = Math.max(0, rank - 3);
+          const neighborhood = await this.db.getLeaderboard(limit, minRounds, offset);
+          localLeaderboard = neighborhood.map((p, i) => ({ ...p, actualRank: offset + 1 + i }));
+        }
+
+        await EloDiscord.sendDiscordMessage(message.channel, { embeds: [EloDiscord.buildPlayerStatsEmbed(player, rank, totalRanked, totalPlayers, provisional, localLeaderboard, minRounds)] });
         return;
       }
 
       if (sub === 'leaderboard') {
-        const players = await this.db.getLeaderboard(20);
-        await EloDiscord.sendDiscordMessage(message.channel, { embeds: [EloDiscord.buildLeaderboardEmbed(players, 20)] });
+        const minRounds = this.options.minRoundsForLeaderboard;
+        const totalRanked = await this.db.getTotalRankedPlayers(minRounds);
+        const totalPlayers = await this.db.getTotalPlayers();
+        
+        let targetRank = 1;
+        if (args.length > 1) {
+          const parsed = parseInt(args[1], 10);
+          if (!isNaN(parsed) && parsed > 0) {
+            targetRank = parsed;
+          }
+        }
+        
+        if (targetRank > totalRanked && totalRanked > 0) {
+          targetRank = totalRanked;
+        }
+        
+        const limit = 25;
+        let offset = Math.max(0, targetRank - 13);
+        const startRank = offset + 1;
+        
+        const players = await this.db.getLeaderboard(limit, minRounds, offset);
+        await EloDiscord.sendDiscordMessage(message.channel, { embeds: [EloDiscord.buildLeaderboardEmbed(players, limit, startRank, totalRanked, totalPlayers)] });
         return;
       }
 
@@ -782,8 +837,18 @@ export const EloDiscord = {
       const minRounds = this.options.minRoundsForLeaderboard;
       const provisional = player.roundsPlayed < minRounds;
       const rank = provisional ? null : await this.db.getPlayerRank(player.mu, minRounds);
-      const totalPlayers = provisional ? minRounds : await this.db.getTotalPlayers();
-      await EloDiscord.sendDiscordMessage(message.channel, { embeds: [EloDiscord.buildPlayerStatsEmbed(player, rank, totalPlayers, provisional)] });
+      const totalRanked = await this.db.getTotalRankedPlayers(minRounds);
+      const totalPlayers = await this.db.getTotalPlayers();
+
+      let localLeaderboard = null;
+      if (!provisional && rank !== null) {
+        const limit = 5;
+        const offset = Math.max(0, rank - 3);
+        const neighborhood = await this.db.getLeaderboard(limit, minRounds, offset);
+        localLeaderboard = neighborhood.map((p, i) => ({ ...p, actualRank: offset + 1 + i }));
+      }
+
+      await EloDiscord.sendDiscordMessage(message.channel, { embeds: [EloDiscord.buildPlayerStatsEmbed(player, rank, totalRanked, totalPlayers, provisional, localLeaderboard, minRounds)] });
     };
 
     tracker._findPlayerByIdentifier = async function(identifier) {
