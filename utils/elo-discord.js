@@ -194,37 +194,47 @@ export const EloDiscord = {
       roundDuration,
       totalPlayerCount,
       playersUpdatedCount,
-      topMovers,
       team1Summary,
       team2Summary,
+      liveT1,
+      liveT2,
       calculationDuration
     } = data;
 
     const winnerText = winningTeamID === 1 ? 'Team 1' : (winningTeamID === 2 ? 'Team 2' : 'Draw');
     const durationStr = formatDuration(roundDuration);
 
-    const moverLines = topMovers.map((m, i) => {
-      const deltaSign = m.deltaMu >= 0 ? '+' : '';
-      return `${i + 1}. **${m.name}**: ${deltaSign}${m.deltaMu.toFixed(2)}μ (${m.muBefore.toFixed(1)} → ${m.muAfter.toFixed(1)})`;
-    });
+    const formatSpread = (spread, teamName) => {
+      if (!spread || spread.length === 0) return '';
+      const lines = spread.map(m => {
+        const deltaSign = m.deltaMu >= 0 ? '+' : '';
+        return `${m.label} **${m.name}**: ${deltaSign}${m.deltaMu.toFixed(2)}μ (${m.muBefore.toFixed(1)} → ${m.muAfter.toFixed(1)})`;
+      });
+      return `**${teamName}**\n${lines.join('\n')}`;
+    };
 
-    const matchVeterancy = (team1Summary.count + team2Summary.count) > 0
-      ? (team1Summary.tierStats.rCount + team2Summary.tierStats.rCount) / (team1Summary.count + team2Summary.count)
+    const spreadText = [
+      formatSpread(team1Summary.spreadSnapshot, 'Team 1'),
+      formatSpread(team2Summary.spreadSnapshot, 'Team 2')
+    ].filter(Boolean).join('\n\n');
+
+    const matchVeterancy = (liveT1.count + liveT2.count) > 0
+      ? (liveT1.tierStats.rCount + liveT2.tierStats.rCount) / (liveT1.count + liveT2.count)
       : 0;
     const vUI = getVeterancyUI(matchVeterancy);
 
-    const muDelta = Math.abs(team1Summary.avgMu - team2Summary.avgMu);
-    const regDelta = Math.abs(team1Summary.tierStats.rCount - team2Summary.tierStats.rCount);
+    const muDelta = Math.abs(liveT1.avgMu - liveT2.avgMu);
+    const regDelta = Math.abs(liveT1.tierStats.rCount - liveT2.tierStats.rCount);
 
-    const muLeadTeam = team1Summary.avgMu >= team2Summary.avgMu ? 1 : 2;
-    // const regMuLeadTeam = (team1Summary.avgRegMu || 0) >= (team2Summary.avgRegMu || 0) ? 1 : 2;
-    const vetAdv = team1Summary.tierStats.rCount === team2Summary.tierStats.rCount ? 'Tie' : `Team ${team1Summary.tierStats.rCount > team2Summary.tierStats.rCount ? 1 : 2}`;
+    const muLeadTeam = liveT1.avgMu >= liveT2.avgMu ? 1 : 2;
+    // const regMuLeadTeam = (liveT1.avgRegMu || 0) >= (liveT2.avgRegMu || 0) ? 1 : 2;
+    const vetAdv = liveT1.tierStats.rCount === liveT2.tierStats.rCount ? 'Tie' : `Team ${liveT1.tierStats.rCount > liveT2.tierStats.rCount ? 1 : 2}`;
     
-    const totalRegs = team1Summary.tierStats.rCount + team2Summary.tierStats.rCount;
-    const leadRegs = Math.max(team1Summary.tierStats.rCount, team2Summary.tierStats.rCount);
+    const totalRegs = liveT1.tierStats.rCount + liveT2.tierStats.rCount;
+    const leadRegs = Math.max(liveT1.tierStats.rCount, liveT2.tierStats.rCount);
     const regShare = totalRegs > 0 ? Math.round((leadRegs / totalRegs) * 100) : 0;
-    const t1Share = totalRegs > 0 ? Math.round((team1Summary.tierStats.rCount / totalRegs) * 100) : 0;
-    const t2Share = totalRegs > 0 ? Math.round((team2Summary.tierStats.rCount / totalRegs) * 100) : 0;
+    const t1Share = totalRegs > 0 ? Math.round((liveT1.tierStats.rCount / totalRegs) * 100) : 0;
+    const t2Share = totalRegs > 0 ? Math.round((liveT2.tierStats.rCount / totalRegs) * 100) : 0;
     const leadShare = Math.max(t1Share, t2Share);
     const vetAdvText = regDelta === 0 ? 'Tie' : `${vetAdv} Advantage`;
 
@@ -251,7 +261,7 @@ export const EloDiscord = {
     return {
       color: vUI.color,
       title: '🏆 Round Ended',
-      description: `**Veterancy: ${vUI.icon} ${vUI.label}**\n*Percentage of established "Regular" players (10+ rounds) in the match.*\n\n${generateMatrixTable(team1Summary, team2Summary)}`,
+      description: `**Veterancy: ${vUI.icon} ${vUI.label}**\n*Percentage of established "Regular" players (10+ rounds) in the match.*\n\n${generateMatrixTable(liveT1, liveT2)}`,
       fields: [
         { name: 'Map / Layer', value: layerName || 'Unknown', inline: true },
         { name: 'Winner', value: `${winnerText} (+${ticketDiff} tickets)`, inline: true },
@@ -272,7 +282,7 @@ export const EloDiscord = {
         },
         { name: 'Players Updated', value: playersUpdatedCount.toString(), inline: true },
         { name: 'Processing Time', value: `${calculationDuration}ms`, inline: true },
-        { name: 'Largest Rating Changes (Regulars Only)', value: moverLines.length > 0 ? moverLines.join('\n') : 'No regulars played this round', inline: false }
+        { name: 'Rating Spread (Regulars)', value: spreadText || 'No regulars played this round', inline: false }
       ],
       timestamp: new Date().toISOString()
     };
@@ -455,8 +465,8 @@ export const EloDiscord = {
       {
           name: 'Match Health',
           value: [
-            `**Regular Balance:** ${getRegEmoji(leadShare)} ${regDelta} Reg diff (${t1Share}% vs ${t2Share}% Share | ${vetAdvText})`,
-            `**Skill Balance:** ${getEloEmoji(muDelta)} ${muDelta.toFixed(2)}μ Elo diff (${muAdvText})`
+            `**Skill Balance:** ${getEloEmoji(muDelta)} ${muDelta.toFixed(2)}μ Elo diff (${muAdvText})`,
+            `**Regular Balance:** ${getRegEmoji(leadShare)} ${regDelta} Reg diff (${t1Share}% vs ${t2Share}% Share | ${vetAdvText})`
           ].join('\n'),
         inline: false
       },

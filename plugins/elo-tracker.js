@@ -595,13 +595,13 @@ export default class EloTracker extends BasePlugin {
 
     // --- Apply participation scaling, build DB updates, track topMovers ---
     const dbUpdates = [];
-    const topMovers = [];
     const now = Date.now();
 
     const processTeam = (players, updates, isWinner, isLoser) => {
       const metrics = this._getMatchMetrics(players);
       let totalDeltaMu = 0;
       let totalDeltaSigma = 0;
+      const teamRegulars = [];
 
       players.forEach((player, i) => {
         const { deltaMu, deltaSigma } = updates[i];
@@ -627,10 +627,10 @@ export default class EloTracker extends BasePlugin {
           lastSeen: now
         });
 
-        // Largest Rating Changes: Filtered to Regulars Only
+        // Track Regulars for Spread Snapshot
         const rounds = rating.roundsPlayed ?? 0;
         if (rounds >= this.thresholds.regularMinGames) {
-          topMovers.push({
+          teamRegulars.push({
             name: player.name,
             muBefore: rating.mu,
             muAfter: newMu,
@@ -642,11 +642,28 @@ export default class EloTracker extends BasePlugin {
         this.eloCache.set(player.eosID, { mu: newMu, sigma: newSigma, roundsPlayed: rounds + 1 });
       });
 
+      // Calculate Spread Snapshot
+      teamRegulars.sort((a, b) => b.muBefore - a.muBefore);
+      let spreadSnapshot = [];
+      if (teamRegulars.length <= 5) {
+        spreadSnapshot = teamRegulars.map((r, i) => ({ ...r, label: `${i + 1}.` }));
+      } else {
+        const midIndex = Math.floor(teamRegulars.length / 2);
+        spreadSnapshot = [
+          { ...teamRegulars[0], label: 'Top:' },
+          { ...teamRegulars[1], label: 'Top:' },
+          { ...teamRegulars[midIndex], label: 'Mid:' },
+          { ...teamRegulars[teamRegulars.length - 2], label: 'Bot:' },
+          { ...teamRegulars[teamRegulars.length - 1], label: 'Bot:' }
+        ];
+      }
+
       // Averages calculated outside of forEach loop after summation is complete
       return {
         ...metrics,
         avgDeltaMu: players.length > 0 ? totalDeltaMu / players.length : 0,
-        avgDeltaSigma: players.length > 0 ? totalDeltaSigma / players.length : 0
+        avgDeltaSigma: players.length > 0 ? totalDeltaSigma / players.length : 0,
+        spreadSnapshot
       };
     };
 
@@ -732,9 +749,8 @@ export default class EloTracker extends BasePlugin {
     // --- Discord post ---
     if (this.discordAdminChannel) {
       try {
-        const sortedMovers = topMovers
-          .sort((a, b) => Math.abs(b.deltaMu) - Math.abs(a.deltaMu))
-          .slice(0, 5);
+        const liveT1 = this._getMatchMetrics(this.server.players.filter(p => p.teamID === 1));
+        const liveT2 = this._getMatchMetrics(this.server.players.filter(p => p.teamID === 2));
 
         const embed = EloDiscord.buildRoundSummaryEmbed({
           layerName: this.server.currentLayer?.name ?? 'Unknown',
@@ -744,9 +760,10 @@ export default class EloTracker extends BasePlugin {
           roundDuration: roundEndTime - this.session.roundStartTime,
           totalPlayerCount: this.server.players.length,
           playersUpdatedCount: eligible.length,
-          topMovers: sortedMovers,
           team1Summary,
           team2Summary,
+          liveT1,
+          liveT2,
           calculationDuration
         });
         await EloDiscord.sendDiscordMessage(this.discordAdminChannel, { embeds: [embed] });
