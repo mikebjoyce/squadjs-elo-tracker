@@ -1,4 +1,4 @@
-# EloTracker Plugin v1.0.1
+# EloTracker Plugin v1.1.0
 
 **SquadJS Plugin for Skill-Based Player Rating**
 
@@ -31,7 +31,8 @@ EloTracker uses a TrueSkill-derived algorithm — the same family of systems use
 
 | Symbol | Name | Meaning |
 |---|---|---|
-| **μ (mu)** | Skill Estimate | Your estimated performance level. Starts at **25.0**. |
+| **Rating** | Leaderboard Score | Your visible score on the leaderboard. Calculated as **μ - 1.5σ** to encourage active play. |
+| **μ (mu)** | Base Skill | Your estimated true performance level. Starts at **25.0**. |
 | **σ (sigma)** | Uncertainty | The system's confidence in your rating. Starts at **~8.33** and decreases as you play. |
 
 ### Calibration Stages
@@ -127,7 +128,7 @@ squad-server/
 
 - `!elo` — View your current ELO rating and record.
 - `!elo <name | steamID>` — Look up another player's rating.
-- `!elo leaderboard` — Top 10 players by skill rating.
+- `!elo leaderboard` — Top 10 players by conservative rating.
 - `!elo help` — Show available commands.
 
 **Admin (ChatAdmin channel only):**
@@ -168,7 +169,7 @@ A player's rating change is scaled by their time in the round:
 ### Leaderboard & Ranking
 
 - **Eligibility:** Players must reach `minRoundsForLeaderboard` to receive an official rank.
-- **Sorting:** Ranked strictly by **μ (mu)**.
+- **Sorting:** Ranked by **Conservative Rating (μ - 1.5σ)**. This ensures that leaderboard scores require both high skill and low uncertainty, encouraging active play.
 - **Provisional:** Players below the threshold are visible but unranked.
 
 ---

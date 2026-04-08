@@ -36,6 +36,9 @@
  * - !elo with no sub-command falls through to the player lookup
  *   path using the full args string as the identifier.
  *
+ *   Calculates and displays a "Conservative Rating" (μ - 1.5σ) 
+ *   as the primary player rank to encourage active play.
+ *
  * Author:
  * Discord: `real_slacker`
  *
@@ -43,6 +46,8 @@
  */
 
 import Logger from '../../core/logger.js';
+
+const SIGMA_MULTIPLIER = 1.5;
 
 const EloCommands = {
   register(tracker) {
@@ -95,9 +100,10 @@ const EloCommands = {
           if (!players.length) {
             return await this.respond(player, 'No leaderboard data yet.');
           }
-          const lines = players.map((p, i) =>
-            `#${i + 1} ${p.name} — μ ${p.mu.toFixed(2)} (${p.wins}W/${p.losses}L)`
-          );
+          const lines = players.map((p, i) => {
+            const consRating = p.mu - (SIGMA_MULTIPLIER * p.sigma);
+            return `#${i + 1} ${p.name} — ${consRating.toFixed(1)} (${p.wins}W/${p.losses}L)`;
+          });
           return await this.respond(player, ['=== ELO Leaderboard ===', ...lines].join('\n'));
         } catch (err) {
           Logger.verbose('EloTracker', 1, `[EloCommands] Leaderboard failed: ${err.message}`);
@@ -115,10 +121,11 @@ const EloCommands = {
 
         const minRounds = this.options.minRoundsForLeaderboard;
         let rankLine;
+        const consRating = record.mu - (SIGMA_MULTIPLIER * record.sigma);
         if (record.roundsPlayed < minRounds) {
           rankLine = `Rank: Provisional — ${record.roundsPlayed}/${minRounds} rounds`;
         } else {
-          const rank = await this.db.getPlayerRank(record.mu, minRounds);
+          const rank = await this.db.getPlayerRank(consRating, minRounds);
           const total = await this.db.getTotalPlayers();
           rankLine = `Rank: #${rank} (of ${total} total)`;
         }
@@ -126,7 +133,8 @@ const EloCommands = {
         return await this.respond(player, [
           `=== ${record.name} ===`,
           rankLine,
-          `Rating: μ ${record.mu.toFixed(2)} ± σ ${record.sigma.toFixed(2)}`,
+          `CSR: ${consRating.toFixed(2)} (μ - 1.5σ)`,
+          `Estimated Skill: ${record.mu.toFixed(2)} μ | Certainty: ${record.sigma.toFixed(2)} σ`,
           `Record: ${record.wins}W / ${record.losses}L (${record.roundsPlayed} rounds)`
         ].join('\n'));
       } catch (err) {

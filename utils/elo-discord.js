@@ -27,6 +27,9 @@
  *       Attaches onDiscordMessage and _findPlayerByIdentifier onto
  *       the tracker instance.
  *
+ *   Calculates and displays a "Conservative Rating" (μ - 1.5σ) 
+ *   as the primary player rank to encourage active play.
+ *
  * ─── DEPENDENCIES ────────────────────────────────────────────────
  *
  * Logger (../../core/logger.js)
@@ -56,6 +59,8 @@
  */
 
 import Logger from '../../core/logger.js';
+
+const SIGMA_MULTIPLIER = 1.5;
 
 const formatDuration = (ms) => {
   const seconds = Math.floor((ms / 1000) % 60);
@@ -291,6 +296,8 @@ export const EloDiscord = {
   buildPlayerStatsEmbed(player, rank, totalRanked, totalPlayers, provisional = false, localLeaderboard = null, minRounds = 10) {
     const { name, mu, sigma, wins, losses, roundsPlayed } = player;
 
+    const consRating = mu - (SIGMA_MULTIPLIER * sigma);
+
     let topPercent;
     if (!provisional) {
       const rawPercent = ((rank - 1) / (totalRanked > 1 ? totalRanked - 1 : 1)) * 100;
@@ -310,23 +317,33 @@ export const EloDiscord = {
     const matchHistoryValue = [
       `${wins} Wins / ${losses} Losses`,
       winRateStr
-    ].filter(Boolean).join('\n');
+    ].filter(Boolean).join(' (').concat(winRateStr ? ')' : '');
 
     const totalRankedFmt = totalRanked.toLocaleString();
     const totalPlayersFmt = totalPlayers.toLocaleString();
 
     const description = provisional
       ? `**Provisional** — ${roundsPlayed} rounds played. Rank visible after ${minRounds} rounds. (${totalPlayersFmt} total tracked)`
-      : (totalRanked > 0 ? `Rank **#${rank}** of **${totalRankedFmt}** ranked players (${totalPlayersFmt} total).` : 'Unranked');
+      : (totalRanked > 0 ? `Rank **#${rank}** of **${totalRankedFmt}** ranked players (${totalPlayersFmt} total).\nTop ${topPercent}% of all players` : 'Unranked');
 
-    const skillRatingValue = provisional
-      ? `**${mu.toFixed(1)} μ** (Calibrating...)`
-      : `**${mu.toFixed(1)} μ** (Top ${topPercent}% of players)`;
+    const ratingValue = provisional
+      ? `**${consRating.toFixed(1)} CSR** (Calibrating | μ - 1.5σ)`
+      : `**${consRating.toFixed(1)} CSR** (μ - 1.5σ)`;
 
     const fields = [
       {
-        name: 'Skill Rating',
-        value: skillRatingValue,
+        name: 'CSR (Competitive Skill Rank)',
+        value: ratingValue,
+        inline: false
+      },
+      {
+        name: 'Estimated Skill (μ)',
+        value: `**${mu.toFixed(1)} μ**`,
+        inline: false
+      },
+      {
+        name: 'System Certainty (σ)',
+        value: `${reliability} (**${sigma.toFixed(2)} σ**)`,
         inline: false
       },
       {
@@ -335,20 +352,16 @@ export const EloDiscord = {
         inline: false
       },
       {
-        name: 'Reliability',
-        value: `${reliability} (σ ${sigma.toFixed(2)})`,
-        inline: false
-      },
-      {
         name: 'Glossary',
-        value: 'μ (Mu) = Skill Level | σ (Sigma) = Uncertainty',
+        value: 'μ (Mu) = Estimated Skill | σ (Sigma) = System Certainty',
         inline: false
       }
     ];
 
     if (localLeaderboard && localLeaderboard.length > 0) {
       const localLines = localLeaderboard.map(p => {
-        const line = `#${p.actualRank} ${p.name} — μ ${p.mu.toFixed(1)}`;
+        const pConsRating = p.mu - (SIGMA_MULTIPLIER * p.sigma);
+        const line = `#${p.actualRank} ${p.name} — ${pConsRating.toFixed(1)} (${p.wins}W/${p.losses}L)`;
         if (p.eosID === player.eosID) {
           return `${line}  <<`;
         }
@@ -374,7 +387,8 @@ export const EloDiscord = {
     const lines = players.slice(0, limit).map((p, i) => {
       const currentRank = startRank + i;
       const paddedRank = currentRank.toString().padStart(2, ' ');
-      const line = `#${paddedRank} ${p.name} — μ ${p.mu.toFixed(1)} (W/L: ${p.wins}/${p.losses})`;
+      const consRating = p.mu - (SIGMA_MULTIPLIER * p.sigma);
+      const line = `#${paddedRank} ${p.name} — ${consRating.toFixed(1)} (${p.wins}W/${p.losses}L)`;
       if (targetRank && currentRank === targetRank) {
         return `${line}  <<`;
       }
@@ -732,15 +746,19 @@ export const EloDiscord = {
           fields: [
             {
               name: 'TrueSkill Algorithm',
-              value: 'A rating system used by major platforms (like Xbox) to track your skill (μ) and uncertainty (σ) in team games.'
+              value: 'A rating system used by major platforms (like Xbox) to track your estimated skill (μ) and system certainty (σ) in team games.'
             },
             {
-              name: 'Skill (μ — "Mu")',
+              name: 'CSR (Competitive Skill Rank)',
+              value: 'Your official leaderboard score, calculated conservatively as **μ - 1.5σ** to encourage active play.'
+            },
+            {
+              name: 'Estimated Skill (μ — "Mu")',
               value: `Your estimated performance level. Everyone starts at ${initialMu}. This number goes up when you win and decreases when you lose based on the strength of your opponents.`
             },
             {
-              name: 'Reliability (σ — "Sigma")',
-              value: `This is the system's confidence in your skill rating. It starts at ${initialSigma} and drops as you play more games, making your rank more stable.`
+              name: 'System Certainty (σ — "Sigma")',
+              value: `This is the system's confidence in your rank. It starts at ${initialSigma} and drops as you play more games, making your rank more stable.`
             },
             {
               name: 'The Calibration Goal',
@@ -798,7 +816,7 @@ export const EloDiscord = {
 
         const minRounds = this.options.minRoundsForLeaderboard;
         const provisional = player.roundsPlayed < minRounds;
-        const rank = provisional ? null : await this.db.getPlayerRank(player.mu, minRounds);
+        const rank = provisional ? null : await this.db.getPlayerRank(player.mu - (SIGMA_MULTIPLIER * player.sigma), minRounds);
         const totalRanked = await this.db.getTotalRankedPlayers(minRounds);
         const totalPlayers = await this.db.getTotalPlayers();
 
@@ -853,7 +871,7 @@ export const EloDiscord = {
 
       const minRounds = this.options.minRoundsForLeaderboard;
       const provisional = player.roundsPlayed < minRounds;
-      const rank = provisional ? null : await this.db.getPlayerRank(player.mu, minRounds);
+      const rank = provisional ? null : await this.db.getPlayerRank(player.mu - (SIGMA_MULTIPLIER * player.sigma), minRounds);
       const totalRanked = await this.db.getTotalRankedPlayers(minRounds);
       const totalPlayers = await this.db.getTotalPlayers();
 
