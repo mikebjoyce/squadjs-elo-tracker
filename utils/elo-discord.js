@@ -534,8 +534,17 @@ export const EloDiscord = {
       const args = content.replace(/^!elo\s*/i, '').trim().split(/\s+/).filter(Boolean);
       const sub = args[0]?.toLowerCase();
 
+      const hasAdminRole = (!this.options.discordAdminRoleIDs || this.options.discordAdminRoleIDs.length === 0) || 
+        (message.member && this.options.discordAdminRoleIDs.some(roleID => message.member.roles.cache.has(roleID)));
+
       // --- Admin-only commands (admin channel only, checked first) ---
       if (isAdminChannel) {
+        const adminCommands = ['status', 'roundinfo', 'reset', 'backup', 'restore'];
+        if (adminCommands.includes(sub) && !hasAdminRole) {
+           await message.reply('❌ You do not have permission to use this command.');
+           return;
+        }
+
         if (sub === 'status') {
           const sessionCount = this.session.getSessionCount();
           const cacheCount = this.eloCache.size;

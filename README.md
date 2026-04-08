@@ -86,6 +86,8 @@ Add the following to your `config.json`:
     "discordClient": "discord",
     "discordPublicChannelID": "YOUR_CHANNEL_ID",
     "discordAdminChannelID": "YOUR_ADMIN_CHANNEL_ID",
+    "discordReportChannelID": "",
+    "discordAdminRoleIDs": [],
     "eloLogPath": "./elo-match-log.jsonl",
     "minParticipationRatio": 0.15,
     "defaultMu": 25.0,
