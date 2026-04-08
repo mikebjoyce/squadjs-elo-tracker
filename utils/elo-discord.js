@@ -350,13 +350,13 @@ export const EloDiscord = {
       const localLines = localLeaderboard.map(p => {
         const line = `#${p.actualRank} ${p.name} — μ ${p.mu.toFixed(1)}`;
         if (p.eosID === player.eosID) {
-          return `**${line}** 👈`;
+          return `${line}  <<`;
         }
         return line;
       });
       fields.push({
         name: 'Local Leaderboard',
-        value: localLines.join('\n'),
+        value: `\`\`\`text\n${localLines.join('\n')}\n\`\`\``,
         inline: false
       });
     }
@@ -370,10 +370,15 @@ export const EloDiscord = {
     };
   },
 
-  buildLeaderboardEmbed(players, limit, startRank = 1, totalRanked = 0, totalPlayers = 0) {
+  buildLeaderboardEmbed(players, limit, startRank = 1, totalRanked = 0, totalPlayers = 0, targetRank = null) {
     const lines = players.slice(0, limit).map((p, i) => {
-      const rank = (startRank + i).toString().padStart(2, ' ');
-      return `#${rank} ${p.name} — μ ${p.mu.toFixed(1)} (W/L: ${p.wins}/${p.losses})`;
+      const currentRank = startRank + i;
+      const paddedRank = currentRank.toString().padStart(2, ' ');
+      const line = `#${paddedRank} ${p.name} — μ ${p.mu.toFixed(1)} (W/L: ${p.wins}/${p.losses})`;
+      if (targetRank && currentRank === targetRank) {
+        return `${line}  <<`;
+      }
+      return line;
     });
 
     const endRank = startRank + players.length - 1;
@@ -384,7 +389,7 @@ export const EloDiscord = {
     return {
       color: 0xf39c12,
       title: `🏆 Leaderboard ${rankRangeText}`,
-      description: `Out of **${totalRankedFmt}** ranked players (${totalPlayersFmt} total)\n\`\`\`\n${lines.join('\n')}\n\`\`\``,
+      description: `Out of **${totalRankedFmt}** ranked players (${totalPlayersFmt} total)\n\`\`\`text\n${lines.join('\n')}\n\`\`\``,
       timestamp: new Date().toISOString()
     };
   },
@@ -790,8 +795,8 @@ export const EloDiscord = {
 
         let localLeaderboard = null;
         if (!provisional && rank !== null) {
-          const limit = 5;
-          const offset = Math.max(0, rank - 3);
+          const limit = 9;
+          const offset = Math.max(0, rank - 5);
           const neighborhood = await this.db.getLeaderboard(limit, minRounds, offset);
           localLeaderboard = neighborhood.map((p, i) => ({ ...p, actualRank: offset + 1 + i }));
         }
@@ -806,10 +811,12 @@ export const EloDiscord = {
         const totalPlayers = await this.db.getTotalPlayers();
         
         let targetRank = 1;
+        let isCentered = false;
         if (args.length > 1) {
           const parsed = parseInt(args[1], 10);
           if (!isNaN(parsed) && parsed > 0) {
             targetRank = parsed;
+            isCentered = true;
           }
         }
         
@@ -822,7 +829,8 @@ export const EloDiscord = {
         const startRank = offset + 1;
         
         const players = await this.db.getLeaderboard(limit, minRounds, offset);
-        await EloDiscord.sendDiscordMessage(message.channel, { embeds: [EloDiscord.buildLeaderboardEmbed(players, limit, startRank, totalRanked, totalPlayers)] });
+        const displayTargetRank = isCentered ? targetRank : null;
+        await EloDiscord.sendDiscordMessage(message.channel, { embeds: [EloDiscord.buildLeaderboardEmbed(players, limit, startRank, totalRanked, totalPlayers, displayTargetRank)] });
         return;
       }
 
@@ -842,8 +850,8 @@ export const EloDiscord = {
 
       let localLeaderboard = null;
       if (!provisional && rank !== null) {
-        const limit = 5;
-        const offset = Math.max(0, rank - 3);
+        const limit = 9;
+        const offset = Math.max(0, rank - 5);
         const neighborhood = await this.db.getLeaderboard(limit, minRounds, offset);
         localLeaderboard = neighborhood.map((p, i) => ({ ...p, actualRank: offset + 1 + i }));
       }
