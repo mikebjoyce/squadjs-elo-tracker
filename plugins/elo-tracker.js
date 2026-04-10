@@ -393,7 +393,7 @@ export default class EloTracker extends BasePlugin {
     }
     
     if (!layer) {
-      Logger.verbose('EloTracker', 2, `[${source}] Layer object is completely null or undefined.`);
+      Logger.verbose('EloTracker', 3, `[${source}] Layer object is completely null or undefined.`);
       return false;
     }
     
@@ -540,6 +540,12 @@ export default class EloTracker extends BasePlugin {
   async onServerInfoUpdated(info) {
     try {
       if (info && info.currentLayer) {
+        const incomingName = typeof info.currentLayer === 'string'
+          ? info.currentLayer
+          : info.currentLayer?.name;
+
+        if (this.lastKnownGoodLayer?.name === incomingName) return;
+
         await this.resolveLayerInfo(info.currentLayer, 'onServerInfoUpdated');
       }
     } catch (err) {
@@ -552,12 +558,9 @@ export default class EloTracker extends BasePlugin {
     let layerName = this.server.currentLayer?.name ?? '';
     
     if (!gameMode && !layerName) {
-      if (this.lastKnownGoodLayer) {
-        gameMode = this.lastKnownGoodLayer.gamemode;
-        layerName = this.lastKnownGoodLayer.name;
-      } else {
-        return null;
-      }
+      if (!this.lastKnownGoodLayer) return 'Unknown'; // distinct from null/"not ignored"
+      gameMode = this.lastKnownGoodLayer.gamemode;
+      layerName = this.lastKnownGoodLayer.name;
     }
 
     const gameModeLower = gameMode.toLowerCase();
@@ -574,11 +577,19 @@ export default class EloTracker extends BasePlugin {
   }
 
   async onRoundEnded(data) {
+    const gameMode = this.server.currentLayer?.gamemode
+      ?? this.lastKnownGoodLayer?.gamemode
+      ?? null;
+
+    const layerName = this.server.currentLayer?.name
+      ?? this.lastKnownGoodLayer?.name
+      ?? 'Unknown';
+
     if (!this.ready) {
       Logger.verbose('EloTracker', 1, '[onRoundEnded] Fired but plugin not ready. Skipping.');
       const targetReportChannel = this.discordReportChannel || this.discordAdminChannel;
       if (targetReportChannel) {
-        const embed = EloDiscord.buildRoundSkippedEmbed('Plugin not ready at round end', 0, this.server.currentLayer?.name ?? 'Unknown');
+        const embed = EloDiscord.buildRoundSkippedEmbed('Plugin not ready at round end', 0, layerName);
         await EloDiscord.sendDiscordMessage(targetReportChannel, { embeds: [embed] });
       }
       return;
@@ -588,13 +599,12 @@ export default class EloTracker extends BasePlugin {
 
     // --- Eligibility checks ---
     const playerCount = this.server.players.length;
-    const gameMode = this.server.currentLayer?.gamemode ?? null;
 
     if (playerCount < this.options.minPlayersForElo) {
       Logger.verbose('EloTracker', 1, `[onRoundEnded] Skipping ELO update: player count ${playerCount} below threshold ${this.options.minPlayersForElo}.`);
       const targetReportChannel = this.discordReportChannel || this.discordAdminChannel;
       if (targetReportChannel) {
-        const embed = EloDiscord.buildRoundSkippedEmbed(`Player count below threshold (Gamemode: ${gameMode ?? 'Unknown'})`, playerCount, this.server.currentLayer?.name ?? 'Unknown');
+        const embed = EloDiscord.buildRoundSkippedEmbed(`Player count below threshold (Gamemode: ${gameMode ?? 'Unknown'})`, playerCount, layerName);
         await EloDiscord.sendDiscordMessage(targetReportChannel, { embeds: [embed] });
       }
       return;
@@ -602,10 +612,11 @@ export default class EloTracker extends BasePlugin {
 
     const ignoredReason = this.isIgnoredMatch();
     if (ignoredReason) {
-      Logger.verbose('EloTracker', 1, `[onRoundEnded] Skipping ELO update: ignored match type "${ignoredReason}".`);
+      const label = ignoredReason === 'Unknown' ? 'Game mode unknown — skipping (safe default)' : `Ignored match type: ${ignoredReason}`;
+      Logger.verbose('EloTracker', 1, `[onRoundEnded] ${label}`);
       const targetReportChannel = this.discordReportChannel || this.discordAdminChannel;
       if (targetReportChannel) {
-        const embed = EloDiscord.buildRoundSkippedEmbed(`Ignored match type: ${ignoredReason}`, playerCount, this.server.currentLayer?.name ?? 'Unknown');
+        const embed = EloDiscord.buildRoundSkippedEmbed(`Ignored match type: ${ignoredReason}`, playerCount, layerName);
         await EloDiscord.sendDiscordMessage(targetReportChannel, { embeds: [embed] });
       }
       return;
@@ -634,7 +645,7 @@ export default class EloTracker extends BasePlugin {
         const embed = EloDiscord.buildRoundSkippedEmbed(
           `No eligible participants (0 players met minParticipationRatio of ${this.options.minParticipationRatio})`,
           participants.length,
-          this.server.currentLayer?.name ?? 'Unknown'
+          layerName
         );
         await EloDiscord.sendDiscordMessage(targetReportChannel, { embeds: [embed] });
       }
@@ -657,7 +668,7 @@ export default class EloTracker extends BasePlugin {
         const embed = EloDiscord.buildRoundSkippedEmbed(
           `One or both teams had no eligible participants (Gamemode: ${gameMode ?? 'Unknown'})`,
           playerCount,
-          this.server.currentLayer?.name ?? 'Unknown'
+          layerName
         );
         await EloDiscord.sendDiscordMessage(targetReportChannel, { embeds: [embed] });
       }
@@ -757,7 +768,7 @@ export default class EloTracker extends BasePlugin {
     try {
       await this.db.bulkUpsertPlayerStats(dbUpdates);
       await this.db.insertRoundHistory({
-        layerName: this.server.currentLayer?.name ?? 'Unknown',
+        layerName: layerName,
         winningTeamID,
         ticketDiff: ticketDiff,
         roundDuration: roundEndTime - this.session.roundStartTime,
@@ -771,7 +782,7 @@ export default class EloTracker extends BasePlugin {
     const matchRecord = {
       matchId: roundEndTime.toString(),
       endedAt: roundEndTime,
-      layerName: this.server.currentLayer?.name ?? 'Unknown',
+      layerName: layerName,
       gameMode: gameMode ?? 'Unknown',
       outcome,
       roundDuration: roundEndTime - this.session.roundStartTime,
@@ -835,7 +846,7 @@ export default class EloTracker extends BasePlugin {
         const liveT2 = this._getMatchMetrics(this.server.players.filter(p => p.teamID === 2));
 
         const embed = EloDiscord.buildRoundSummaryEmbed({
-          layerName: this.server.currentLayer?.name ?? 'Unknown',
+          layerName: layerName,
           gameMode,
           winningTeamID,
           ticketDiff: ticketDiff,
@@ -901,7 +912,7 @@ export default class EloTracker extends BasePlugin {
     };
 
     return {
-      layerName: this.server.currentLayer?.name ?? 'Unknown',
+      layerName: this.server.currentLayer?.name ?? this.lastKnownGoodLayer?.name ?? 'Unknown',
       roundStartTime: this.session.roundStartTime,
       t1, t2,
       muDelta,
