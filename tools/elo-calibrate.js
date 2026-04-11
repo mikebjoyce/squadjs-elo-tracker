@@ -11,7 +11,7 @@
 
 import readline from 'readline';
 import fs from 'fs';
-import EloCalculator from './elo-calculator.js';
+import EloCalculator from '../utils/elo-calculator.js';
 
 const jsonlPath = process.argv[2];
 const dbPath    = process.argv[3];
@@ -77,15 +77,22 @@ rl.on('line', (line) => {
 function winProbability(team1, team2, BETA) {
   const getRatio = (p) => p.participationRatio ?? 1.0;
   
-  const teamMu1      = team1.reduce((s, p) => s + p.mu * getRatio(p), 0);
-  const teamMu2      = team2.reduce((s, p) => s + p.mu * getRatio(p), 0);
+  let effectiveN1  = team1.reduce((s, p) => s + getRatio(p), 0);
+  let effectiveN2  = team2.reduce((s, p) => s + getRatio(p), 0);
+
+  const scale1 = effectiveN1 > 50.0 ? 50.0 / effectiveN1 : 1.0;
+  const scale2 = effectiveN2 > 50.0 ? 50.0 / effectiveN2 : 1.0;
+
+  effectiveN1 *= scale1;
+  effectiveN2 *= scale2;
+
+  const teamMu1      = team1.reduce((s, p) => s + p.mu * getRatio(p), 0) * scale1;
+  const teamMu2      = team2.reduce((s, p) => s + p.mu * getRatio(p), 0) * scale2;
   
-  const teamSigmaSq1 = team1.reduce((s, p) => s + (p.sigma * p.sigma + BETA * BETA) * getRatio(p), 0);
-  const teamSigmaSq2 = team2.reduce((s, p) => s + (p.sigma * p.sigma + BETA * BETA) * getRatio(p), 0);
+  const teamSigmaSq1 = team1.reduce((s, p) => s + (p.sigma * p.sigma + BETA * BETA) * getRatio(p), 0) * scale1;
+  const teamSigmaSq2 = team2.reduce((s, p) => s + (p.sigma * p.sigma + BETA * BETA) * getRatio(p), 0) * scale2;
   const c            = Math.sqrt(teamSigmaSq1 + teamSigmaSq2);
   
-  const effectiveN1  = team1.reduce((s, p) => s + getRatio(p), 0);
-  const effectiveN2  = team2.reduce((s, p) => s + getRatio(p), 0);
   const nTotal       = effectiveN1 + effectiveN2;
   const epsilon      = Math.sqrt(nTotal) * BETA * Math.SQRT2 * EloCalculator._erfInv(0.01);
   const t            = (teamMu1 - teamMu2) / c;

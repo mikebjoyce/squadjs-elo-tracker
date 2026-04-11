@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 /**
  * elo-rebuild.js
  *
@@ -15,128 +16,9 @@
  * The output is drop-in compatible with !elo restore.
  */
 
-'use strict';
-
-const fs   = require('fs');
-const path = require('path');
-const rl   = require('readline');
-
-// ─── Parameters ────────────────────────────────────────────────────────────
-// Using defaults — calibrate after ratings stabilise on clean data.
-const MU_DEFAULT       = 25.0;
-const SIGMA_DEFAULT    = 25.0 / 3.0;   // 8.333
-const BETA             = 25.0 / 6.0;   // 4.167
-const TAU              = 25.0 / 100.0; // 0.25
-const DRAW_PROBABILITY = 0.01;
-
-// ─── TrueSkill math (team-size-neutral, corrected) ─────────────────────────
-
-function pdf(x) {
-  return (1 / Math.sqrt(2 * Math.PI)) * Math.exp(-0.5 * x * x);
-}
-
-function erf(x) {
-  const sign = x < 0 ? -1 : 1;
-  const t = 1.0 / (1.0 + 0.3275911 * Math.abs(x));
-  const y = 1.0 - (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t * Math.exp(-x * x);
-  return sign * y;
-}
-
-function cdf(x) {
-  return 0.5 * (1 + erf(x / Math.SQRT2));
-}
-
-function erfInv(x) {
-  const a = 0.147;
-  const ln = Math.log(1 - x * x);
-  const t1 = 2 / (Math.PI * a) + ln / 2;
-  const t2 = ln / a;
-  return (x < 0 ? -1 : 1) * Math.sqrt(Math.sqrt(t1 * t1 - t2) - t1);
-}
-
-function v(t, e) {
-  const d = cdf(t - e);
-  return d === 0 ? 0 : pdf(t - e) / d;
-}
-
-function w(t, e) {
-  const vv = v(t, e);
-  return vv * (vv + t - e);
-}
-
-function vDraw(t, e) {
-  const d = cdf(e - t) - cdf(-e - t);
-  return d === 0 ? 0 : (pdf(-e - t) - pdf(e - t)) / d;
-}
-
-function wDraw(t, e) {
-  const vv = vDraw(t, e);
-  const d  = cdf(e - t) - cdf(-e - t);
-  if (d === 0) return vv * vv;
-  return vv * vv + ((-e - t) * pdf(-e - t) - (e - t) * pdf(e - t)) / d;
-}
-
-/**
- * TrueSkill update — fractional participation model.
- *
- * Computes teamMu and teamSigmaSq as SUMS weighted by participationRatio.
- * This prevents transient players from artificially inflating or deflating
- * the team's perceived strength, while preserving the standard TrueSkill model.
- */
-function computeTeamUpdate(team1, team2, outcome) {
-  if (team1.length === 0 || team2.length === 0) return { t1: [], t2: [] };
-
-  const getRatio = (p) => p.participationRatio ?? 1.0;
-
-  // Fractional sum per team
-  const mu1 = team1.reduce((s, p) => s + (p.mu * getRatio(p)), 0);
-  const mu2 = team2.reduce((s, p) => s + (p.mu * getRatio(p)), 0);
-
-  // Fractional variance of the team
-  const sigSq1 = team1.reduce((s, p) => s + ((p.sigma * p.sigma + BETA * BETA) * getRatio(p)), 0);
-  const sigSq2 = team2.reduce((s, p) => s + ((p.sigma * p.sigma + BETA * BETA) * getRatio(p)), 0);
-
-  const c = Math.sqrt(sigSq1 + sigSq2);
-  if (c === 0) return { t1: team1.map(() => ({ dMu: 0, dSigma: 0 })), t2: team2.map(() => ({ dMu: 0, dSigma: 0 })) };
-
-  // Effective headcount
-  const effectiveN1 = team1.reduce((s, p) => s + getRatio(p), 0);
-  const effectiveN2 = team2.reduce((s, p) => s + getRatio(p), 0);
-  const nTotal = effectiveN1 + effectiveN2;
-
-  const epsilon = Math.sqrt(nTotal) * BETA * Math.sqrt(2) * erfInv(DRAW_PROBABILITY);
-  const tRaw    = (mu1 - mu2) / c;
-
-  const playerUpdate = (player, isTeam1) => {
-    const sigmaSq = player.sigma * player.sigma;
-
-    let vVal, wVal, isWinner;
-
-    if (outcome === 'draw') {
-      const t = isTeam1 ? tRaw : -tRaw;
-      vVal    = vDraw(t, epsilon / c);
-      wVal    = wDraw(t, epsilon / c);
-    } else {
-      const tWinner = outcome === 'team1win' ? tRaw : -tRaw;
-      isWinner      = outcome === 'team1win' ? isTeam1 : !isTeam1;
-      vVal          = v(tWinner, epsilon / c);
-      wVal          = w(tWinner, epsilon / c);
-    }
-
-    let dMu = (sigmaSq / c) * vVal;
-    if (outcome !== 'draw' && !isWinner) dMu = -dMu;
-
-    const dSigFactor = Math.min((sigmaSq / (c * c)) * wVal, 1 - 1e-10);
-    const newSigma   = Math.sqrt(sigmaSq * (1 - dSigFactor) + TAU * TAU);
-
-    return { dMu, dSigma: player.sigma - newSigma };
-  };
-
-  return {
-    t1: team1.map(p => playerUpdate(p, true)),
-    t2: team2.map(p => playerUpdate(p, false))
-  };
-}
+import fs from 'fs';
+import * as readline from 'readline';
+import EloCalculator from '../utils/elo-calculator.js';
 
 // ─── Main ───────────────────────────────────────────────────────────────────
 
@@ -144,7 +26,7 @@ async function loadMatches(jsonlPath) {
   return new Promise((resolve, reject) => {
     const matches = [];
     const stream  = fs.createReadStream(jsonlPath, 'utf8');
-    const reader  = rl.createInterface({ input: stream, crlfDelay: Infinity });
+    const reader  = readline.createInterface({ input: stream, crlfDelay: Infinity });
     reader.on('line', line => { if (line.trim()) matches.push(JSON.parse(line)); });
     reader.on('close', () => resolve(matches));
     reader.on('error', reject);
@@ -152,7 +34,11 @@ async function loadMatches(jsonlPath) {
 }
 
 async function main() {
-  const [,, matchlogPath, backupPath, outputArg] = process.argv;
+  const args = process.argv.slice(2);
+  const matchlogPath = args[0];
+  const backupPath = args[1];
+  const outputArg = args[2];
+
   if (!matchlogPath || !backupPath) {
     console.error('Usage: node elo-rebuild.js <matchlog.jsonl> <backup.json> [output.json]');
     process.exit(1);
@@ -166,8 +52,9 @@ async function main() {
 
   // Build steamID/discordID lookup from existing backup
   const metaLookup = new Map(); // eosID → { steamID, discordID }
-  for (const p of backup.players) {
-    metaLookup.set(p.eosID, { steamID: p.steamID ?? null, discordID: p.discordID ?? null });
+  const backupPlayers = Array.isArray(backup) ? backup : backup.players ?? Object.values(backup);
+  for (const p of backupPlayers) {
+    metaLookup.set(p.eosID ?? p.eos_id, { steamID: p.steamID ?? null, discordID: p.discordID ?? null });
   }
 
   // Sort matches chronologically
@@ -184,8 +71,8 @@ async function main() {
         steamID:      meta.steamID,
         discordID:    meta.discordID,
         name,
-        mu:           MU_DEFAULT,
-        sigma:        SIGMA_DEFAULT,
+        mu:           EloCalculator.MU_DEFAULT,
+        sigma:        EloCalculator.SIGMA_DEFAULT,
         wins:         0,
         losses:       0,
         roundsPlayed: 0,
@@ -212,14 +99,16 @@ async function main() {
 
     // Build rating arrays for calculator
     const toRating = p => ({
+      eosID: p.eosID,
       mu: players.get(p.eosID).mu,
       sigma: players.get(p.eosID).sigma,
       participationRatio: p.participationRatio
     });
+    
     const t1Ratings = team1Players.map(toRating);
     const t2Ratings = team2Players.map(toRating);
 
-    const { t1: t1Updates, t2: t2Updates } = computeTeamUpdate(t1Ratings, t2Ratings, match.outcome);
+    const { team1Updates, team2Updates } = EloCalculator.computeTeamUpdate(t1Ratings, t2Ratings, match.outcome);
 
     const isTeam1Winner = match.outcome === 'team1win';
     const isTeam2Winner = match.outcome === 'team2win';
@@ -228,9 +117,9 @@ async function main() {
     const applyUpdates = (matchPlayers, updates, isWinner, isLoser) => {
       matchPlayers.forEach((mp, i) => {
         const state = players.get(mp.eosID);
-        const { dMu, dSigma } = updates[i];
-        const scaled_dMu    = dMu    * mp.participationRatio;
-        const scaled_dSigma = dSigma * mp.participationRatio;
+        const { deltaMu, deltaSigma } = updates[i];
+        const scaled_dMu    = deltaMu    * mp.participationRatio;
+        const scaled_dSigma = deltaSigma * mp.participationRatio;
 
         state.mu           = state.mu + scaled_dMu;
         state.sigma        = Math.max(state.sigma - scaled_dSigma, 0.5);
@@ -242,8 +131,8 @@ async function main() {
       });
     };
 
-    applyUpdates(team1Players, t1Updates, isTeam1Winner, isTeam2Winner);
-    applyUpdates(team2Players, t2Updates, isTeam2Winner, isTeam1Winner);
+    applyUpdates(team1Players, team1Updates, isTeam1Winner, isTeam2Winner);
+    applyUpdates(team2Players, team2Updates, isTeam2Winner, isTeam1Winner);
 
     processed++;
     process.stdout.write(`\rReplaying match ${processed} / ${matches.length}...`);
@@ -256,12 +145,12 @@ async function main() {
     exportedAt:  new Date().toISOString(),
     playerCount: players.size,
     params: {
-      MU_DEFAULT,
-      SIGMA_DEFAULT,
-      BETA,
-      TAU,
-      DRAW_PROBABILITY,
-      note: 'Rebuilt from match log with fractional participation formula. Calibrate BETA/TAU after ratings stabilise.'
+      MU_DEFAULT: EloCalculator.MU_DEFAULT,
+      SIGMA_DEFAULT: EloCalculator.SIGMA_DEFAULT,
+      BETA: EloCalculator.BETA,
+      TAU: EloCalculator.TAU,
+      DRAW_PROBABILITY: EloCalculator.DRAW_PROBABILITY,
+      note: 'Rebuilt from match log using normalized TrueSkill formula.'
     },
     players: Array.from(players.values())
   };
@@ -273,8 +162,8 @@ async function main() {
   // Quick sanity summary
   const muValues = Array.from(players.values()).map(p => p.mu);
   const mean = muValues.reduce((s, v) => s + v, 0) / muValues.length;
-  const diverged = muValues.filter(m => Math.abs(m - MU_DEFAULT) > 0.5).length;
-  console.log(`Avg mu: ${mean.toFixed(3)}  |  Players with |mu-25| > 0.5: ${diverged} / ${players.size} (${(diverged/players.size*100).toFixed(1)}%)`);
+  const diverged = muValues.filter(m => Math.abs(m - EloCalculator.MU_DEFAULT) > 0.5).length;
+  console.log(`Avg mu: ${mean.toFixed(3)}  |  Players with |mu-${EloCalculator.MU_DEFAULT}| > 0.5: ${diverged} / ${players.size} (${(diverged/players.size*100).toFixed(1)}%)`);
 }
 
 main().catch(err => { console.error(err); process.exit(1); });

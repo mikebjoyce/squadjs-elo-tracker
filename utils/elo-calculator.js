@@ -183,14 +183,26 @@ export default class EloCalculator {
 
     const getRatio = (p) => p.participationRatio ?? 1.0;
 
-    // Step 1: Team summary stats
-    // teamMu = sum of all fractional player mu values
-    const teamMu1 = team1.reduce((sum, p) => sum + (p.mu * getRatio(p)), 0);
-    const teamMu2 = team2.reduce((sum, p) => sum + (p.mu * getRatio(p)), 0);
+    // Use effective headcount (sum of participation ratios) instead of raw player count
+    let effectiveN1 = team1.reduce((sum, p) => sum + getRatio(p), 0);
+    let effectiveN2 = team2.reduce((sum, p) => sum + getRatio(p), 0);
 
-    // teamSigma = sum of all fractional player variances
-    const teamSigmaSq1 = team1.reduce((sum, p) => sum + ((p.sigma * p.sigma + this.BETA * this.BETA) * getRatio(p)), 0);
-    const teamSigmaSq2 = team2.reduce((sum, p) => sum + ((p.sigma * p.sigma + this.BETA * this.BETA) * getRatio(p)), 0);
+    // Normalize effective N to 50 max to prevent disconnected "ghost" players from inflating variance
+    // and diluting the TrueSkill reward for active players.
+    const scale1 = effectiveN1 > 50.0 ? 50.0 / effectiveN1 : 1.0;
+    const scale2 = effectiveN2 > 50.0 ? 50.0 / effectiveN2 : 1.0;
+
+    effectiveN1 *= scale1;
+    effectiveN2 *= scale2;
+
+    // Step 1: Team summary stats
+    // teamMu = sum of all fractional player mu values (scaled to max 50 slots)
+    const teamMu1 = team1.reduce((sum, p) => sum + (p.mu * getRatio(p)), 0) * scale1;
+    const teamMu2 = team2.reduce((sum, p) => sum + (p.mu * getRatio(p)), 0) * scale2;
+
+    // teamSigmaSq = sum of all fractional player variances (scaled to max 50 slots)
+    const teamSigmaSq1 = team1.reduce((sum, p) => sum + ((p.sigma * p.sigma + this.BETA * this.BETA) * getRatio(p)), 0) * scale1;
+    const teamSigmaSq2 = team2.reduce((sum, p) => sum + ((p.sigma * p.sigma + this.BETA * this.BETA) * getRatio(p)), 0) * scale2;
 
     // Step 2: Performance delta
     const c = Math.sqrt(teamSigmaSq1 + teamSigmaSq2);
@@ -204,9 +216,6 @@ export default class EloCalculator {
     }
 
     // Epsilon (draw margin).
-    // Use effective headcount (sum of participation ratios) instead of raw player count
-    const effectiveN1 = team1.reduce((sum, p) => sum + getRatio(p), 0);
-    const effectiveN2 = team2.reduce((sum, p) => sum + getRatio(p), 0);
     const nTotal = effectiveN1 + effectiveN2;
     const epsilon = Math.sqrt(nTotal) * this.BETA * Math.sqrt(2) * this._erfInv(this.DRAW_PROBABILITY);
 
