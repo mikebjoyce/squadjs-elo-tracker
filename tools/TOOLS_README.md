@@ -22,6 +22,12 @@ Grid searches TrueSkill BETA and TAU parameters against historical match data, m
 node elo-calibrate.js <matchlog.jsonl> <db-backup.json>
 ```
 
+**`elo-inspect.js`**
+Interactive CLI tool to query players, view local leaderboards, analyse spread distribution, and simulate Discord round-end embeds using data from a match log. Can accept a secondary backup file to automatically calculate and display rating changes.
+```
+node elo-inspect.js <rebuilt.json> [old-backup.json] [matchlog.jsonl]
+```
+
 **`elo-rebuild.js`**
 Replays all recorded matches from scratch using the current TrueSkill formula. Outputs a restore-compatible JSON backup. Useful after formula corrections.
 ```
@@ -33,7 +39,3 @@ Merges two JSONL match log files, deduplicates by `matchId` (first file wins on 
 ```
 node merge-match-logs.js <fileA.jsonl> <fileB.jsonl> [output.jsonl]
 ```
-
----
-
-> **Note:** `elo-rebuild.js` uses CommonJS (`require`) while all other project files use ESM (`import`). Run it with `node` directly — do not import it.

@@ -677,8 +677,8 @@ export default class EloTracker extends BasePlugin {
 
     // --- Run TrueSkill ---
     const { team1Updates, team2Updates } = EloCalculator.computeTeamUpdate(
-      team1Eligible.map(p => getRating(p.eosID)),
-      team2Eligible.map(p => getRating(p.eosID)),
+      team1Eligible.map(p => ({ ...getRating(p.eosID), participationRatio: p.participationRatio })),
+      team2Eligible.map(p => ({ ...getRating(p.eosID), participationRatio: p.participationRatio })),
       outcome
     );
 

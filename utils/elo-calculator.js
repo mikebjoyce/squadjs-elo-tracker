@@ -35,9 +35,9 @@
  *   Do NOT change the subtraction to addition.
  * - c === 0 guard prevents divide-by-zero when all players have zero
  *   sigma and BETA is also zero (edge case; should not occur in practice).
- * - teamMu is computed as the MEAN across players, not the sum.
- *   Per-player deltaMu is scaled by 1/n to match. For equal team sizes
- *   this is mathematically identical to the sum model.
+ * - teamMu is computed as the SUM across players, weighted by their
+ *   participationRatio. This prevents transient players from artificially
+ *   inflating or deflating the team's perceived strength.
  *
  * Author:
  * Discord: `real_slacker`
@@ -49,7 +49,7 @@ export default class EloCalculator {
   // Constants
   static MU_DEFAULT = 25.0;
   static SIGMA_DEFAULT = 25.0 / 3.0;
-  static TAU = 25.0 / 300.0;
+  static TAU = 25.0 / 100.0;
 
   // Configurable constants (exposed as static properties)
   static BETA = 25.0 / 6.0;
@@ -181,31 +181,42 @@ export default class EloCalculator {
       return { team1Updates: [], team2Updates: [] };
     }
 
-    // Step 1: Team summary stats
-    // teamMu = sum of all player mu values
-    const teamMu1 = team1.reduce((sum, p) => sum + p.mu, 0) / team1.length;
-    const teamMu2 = team2.reduce((sum, p) => sum + p.mu, 0) / team2.length;
+    const getRatio = (p) => p.participationRatio ?? 1.0;
 
-    // teamSigma = variance of team: sum(sigma² + beta²)
-    const teamSigmaSq1 = team1.reduce((sum, p) => sum + (p.sigma * p.sigma + this.BETA * this.BETA), 0);
-    const teamSigmaSq2 = team2.reduce((sum, p) => sum + (p.sigma * p.sigma + this.BETA * this.BETA), 0);
+    // Use effective headcount (sum of participation ratios) instead of raw player count
+    let effectiveN1 = team1.reduce((sum, p) => sum + getRatio(p), 0);
+    let effectiveN2 = team2.reduce((sum, p) => sum + getRatio(p), 0);
+
+    // Normalize effective N to 50 max to prevent disconnected "ghost" players from inflating variance
+    // and diluting the TrueSkill reward for active players.
+    const scale1 = effectiveN1 > 50.0 ? 50.0 / effectiveN1 : 1.0;
+    const scale2 = effectiveN2 > 50.0 ? 50.0 / effectiveN2 : 1.0;
+
+    effectiveN1 *= scale1;
+    effectiveN2 *= scale2;
+
+    // Step 1: Team summary stats
+    // teamMu = sum of all fractional player mu values (scaled to max 50 slots)
+    const teamMu1 = team1.reduce((sum, p) => sum + (p.mu * getRatio(p)), 0) * scale1;
+    const teamMu2 = team2.reduce((sum, p) => sum + (p.mu * getRatio(p)), 0) * scale2;
+
+    // teamSigmaSq = sum of all fractional player variances (scaled to max 50 slots)
+    const teamSigmaSq1 = team1.reduce((sum, p) => sum + ((p.sigma * p.sigma + this.BETA * this.BETA) * getRatio(p)), 0) * scale1;
+    const teamSigmaSq2 = team2.reduce((sum, p) => sum + ((p.sigma * p.sigma + this.BETA * this.BETA) * getRatio(p)), 0) * scale2;
 
     // Step 2: Performance delta
-    // c = sqrt( teamSigma1² + teamSigma2² )
-    // Note: teamSigmaSq variables already hold the squared sums.
     const c = Math.sqrt(teamSigmaSq1 + teamSigmaSq2);
 
     if (c === 0) {
       // Should not happen if teams have players with non-zero sigma or beta
       return {
-        team1Updates: team1.map(() => ({ deltaMu: 0, deltaSigma: 0 })),
-        team2Updates: team2.map(() => ({ deltaMu: 0, deltaSigma: 0 }))
+        team1Updates: team1.map(() => ({ deltaMu: 0, deltaSigma: 0, vVal: 0, wVal: 0 })),
+        team2Updates: team2.map(() => ({ deltaMu: 0, deltaSigma: 0, vVal: 0, wVal: 0 }))
       };
     }
 
-    // Epsilon (draw margin)
-    // epsilon = sqrt(team1.length + team2.length) * BETA * sqrt(2) * erfInv(DRAW_PROBABILITY)
-    const nTotal = team1.length + team2.length;
+    // Epsilon (draw margin).
+    const nTotal = effectiveN1 + effectiveN2;
     const epsilon = Math.sqrt(nTotal) * this.BETA * Math.sqrt(2) * this._erfInv(this.DRAW_PROBABILITY);
 
     // t = (teamMu_winner - teamMu_loser) / c
@@ -275,14 +286,34 @@ export default class EloCalculator {
       //   Subtraction is intentional — do NOT change to addition.
       return {
         deltaMu: deltaMu,
-        deltaSigma: player.sigma - newSigma
+        deltaSigma: player.sigma - newSigma,
+        vVal: vVal,
+        wVal: wVal
       };
     };
 
     const team1Updates = team1.map(p => computePlayerUpdate(p, true));
     const team2Updates = team2.map(p => computePlayerUpdate(p, false));
+    
+    // Grab the first vVal / wVal just for diagnostic debug output
+    const vVal = team1Updates.length > 0 ? team1Updates[0].vVal : 0;
+    const wVal = team1Updates.length > 0 ? team1Updates[0].wVal : 0;
 
-    return { team1Updates, team2Updates };
+    return { 
+      team1Updates, 
+      team2Updates,
+      debug: {
+        teamMu1, teamMu2,
+        teamSigmaSq1, teamSigmaSq2,
+        c,
+        effectiveN1, effectiveN2,
+        nTotal,
+        epsilon,
+        tRaw,
+        vVal,
+        wVal
+      }
+    };
   }
 
   /**
