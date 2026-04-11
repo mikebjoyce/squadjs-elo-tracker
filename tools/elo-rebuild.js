@@ -26,7 +26,7 @@ const rl   = require('readline');
 const MU_DEFAULT       = 25.0;
 const SIGMA_DEFAULT    = 25.0 / 3.0;   // 8.333
 const BETA             = 25.0 / 6.0;   // 4.167
-const TAU              = 25.0 / 300.0; // 0.0833
+const TAU              = 25.0 / 100.0; // 0.25
 const DRAW_PROBABILITY = 0.01;
 
 // ─── TrueSkill math (team-size-neutral, corrected) ─────────────────────────
@@ -77,32 +77,33 @@ function wDraw(t, e) {
 }
 
 /**
- * Corrected TrueSkill update — team-size-neutral.
+ * TrueSkill update — fractional participation model.
  *
- * FIX vs original: teamMu and teamSigmaSq are computed as MEANS not sums.
- * This prevents team headcount from dominating the performance delta (t).
- * Per-player deltaMu is scaled by 1/n to match the mean-based model.
- *
- * For equal team sizes, this is mathematically identical to the sum model.
+ * Computes teamMu and teamSigmaSq as SUMS weighted by participationRatio.
+ * This prevents transient players from artificially inflating or deflating
+ * the team's perceived strength, while preserving the standard TrueSkill model.
  */
 function computeTeamUpdate(team1, team2, outcome) {
   if (team1.length === 0 || team2.length === 0) return { t1: [], t2: [] };
 
-  const n1 = team1.length;
-  const n2 = team2.length;
+  const getRatio = (p) => p.participationRatio ?? 1.0;
 
-  // Mean mu per team
-  const mu1 = team1.reduce((s, p) => s + p.mu, 0) / n1;
-  const mu2 = team2.reduce((s, p) => s + p.mu, 0) / n2;
+  // Fractional sum per team
+  const mu1 = team1.reduce((s, p) => s + (p.mu * getRatio(p)), 0);
+  const mu2 = team2.reduce((s, p) => s + (p.mu * getRatio(p)), 0);
 
-  // Variance of the team: sum(sigma² + BETA²)
-  const sigSq1 = team1.reduce((s, p) => s + p.sigma * p.sigma + BETA * BETA, 0);
-  const sigSq2 = team2.reduce((s, p) => s + p.sigma * p.sigma + BETA * BETA, 0);
+  // Fractional variance of the team
+  const sigSq1 = team1.reduce((s, p) => s + ((p.sigma * p.sigma + BETA * BETA) * getRatio(p)), 0);
+  const sigSq2 = team2.reduce((s, p) => s + ((p.sigma * p.sigma + BETA * BETA) * getRatio(p)), 0);
 
   const c = Math.sqrt(sigSq1 + sigSq2);
   if (c === 0) return { t1: team1.map(() => ({ dMu: 0, dSigma: 0 })), t2: team2.map(() => ({ dMu: 0, dSigma: 0 })) };
 
-  const nTotal  = n1 + n2;
+  // Effective headcount
+  const effectiveN1 = team1.reduce((s, p) => s + getRatio(p), 0);
+  const effectiveN2 = team2.reduce((s, p) => s + getRatio(p), 0);
+  const nTotal = effectiveN1 + effectiveN2;
+
   const epsilon = Math.sqrt(nTotal) * BETA * Math.sqrt(2) * erfInv(DRAW_PROBABILITY);
   const tRaw    = (mu1 - mu2) / c;
 
@@ -210,7 +211,11 @@ async function main() {
     for (const p of match.players) getOrInit(p.eosID, p.name, match.endedAt);
 
     // Build rating arrays for calculator
-    const toRating = p => ({ mu: players.get(p.eosID).mu, sigma: players.get(p.eosID).sigma });
+    const toRating = p => ({
+      mu: players.get(p.eosID).mu,
+      sigma: players.get(p.eosID).sigma,
+      participationRatio: p.participationRatio
+    });
     const t1Ratings = team1Players.map(toRating);
     const t2Ratings = team2Players.map(toRating);
 
@@ -256,7 +261,7 @@ async function main() {
       BETA,
       TAU,
       DRAW_PROBABILITY,
-      note: 'Rebuilt from match log with team-size-neutral formula. Calibrate BETA/TAU after ratings stabilise.'
+      note: 'Rebuilt from match log with fractional participation formula. Calibrate BETA/TAU after ratings stabilise.'
     },
     players: Array.from(players.values())
   };

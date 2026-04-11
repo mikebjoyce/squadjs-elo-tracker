@@ -75,14 +75,18 @@ rl.on('line', (line) => {
 
 // --- Win probability ---
 function winProbability(team1, team2, BETA) {
-  const n1           = team1.length;
-  const n2           = team2.length;
-  const teamMu1      = team1.reduce((s, p) => s + p.mu, 0) / n1;
-  const teamMu2      = team2.reduce((s, p) => s + p.mu, 0) / n2;
-  const teamSigmaSq1 = team1.reduce((s, p) => s + p.sigma * p.sigma + BETA * BETA, 0);
-  const teamSigmaSq2 = team2.reduce((s, p) => s + p.sigma * p.sigma + BETA * BETA, 0);
+  const getRatio = (p) => p.participationRatio ?? 1.0;
+  
+  const teamMu1      = team1.reduce((s, p) => s + p.mu * getRatio(p), 0);
+  const teamMu2      = team2.reduce((s, p) => s + p.mu * getRatio(p), 0);
+  
+  const teamSigmaSq1 = team1.reduce((s, p) => s + (p.sigma * p.sigma + BETA * BETA) * getRatio(p), 0);
+  const teamSigmaSq2 = team2.reduce((s, p) => s + (p.sigma * p.sigma + BETA * BETA) * getRatio(p), 0);
   const c            = Math.sqrt(teamSigmaSq1 + teamSigmaSq2);
-  const nTotal       = n1 + n2;
+  
+  const effectiveN1  = team1.reduce((s, p) => s + getRatio(p), 0);
+  const effectiveN2  = team2.reduce((s, p) => s + getRatio(p), 0);
+  const nTotal       = effectiveN1 + effectiveN2;
   const epsilon      = Math.sqrt(nTotal) * BETA * Math.SQRT2 * EloCalculator._erfInv(0.01);
   const t            = (teamMu1 - teamMu2) / c;
   return EloCalculator._cdf(t - epsilon / c);
