@@ -62,7 +62,7 @@
 import Sequelize from 'sequelize';
 import Logger from '../../core/logger.js';
 
-const SIGMA_MULTIPLIER = 1.5;
+const SIGMA_MULTIPLIER = 3.0;
 
 export default class EloDatabase {
   constructor(server, options, connectors) {

@@ -27,7 +27,7 @@
  *       Attaches onDiscordMessage and _findPlayerByIdentifier onto
  *       the tracker instance.
  *
- *   Calculates and displays a "Conservative Rating" (μ - 1.5σ) 
+ *   Calculates and displays a "Conservative Rating" (μ - 3σ) 
  *   as the primary player rank to encourage active play.
  *
  * ─── DEPENDENCIES ────────────────────────────────────────────────
@@ -60,7 +60,7 @@
 
 import Logger from '../../core/logger.js';
 
-const SIGMA_MULTIPLIER = 1.5;
+const SIGMA_MULTIPLIER = 3;
 
 const formatDuration = (ms) => {
   const seconds = Math.floor((ms / 1000) % 60);
@@ -327,8 +327,8 @@ export const EloDiscord = {
       : (totalRanked > 0 ? `Rank **#${rank}** of **${totalRankedFmt}** ranked players (${totalPlayersFmt} total).\nTop ${topPercent}% of all players` : 'Unranked');
 
     const ratingValue = provisional
-      ? `**${consRating.toFixed(1)} CSR** (Calibrating | μ - 1.5σ)`
-      : `**${consRating.toFixed(1)} CSR** (μ - 1.5σ)`;
+      ? `**${consRating.toFixed(1)} CSR** (Calibrating | μ - 3σ)`
+      : `**${consRating.toFixed(1)} CSR** (μ - 3σ)`;
 
     const fields = [
       {
@@ -750,7 +750,7 @@ export const EloDiscord = {
             },
             {
               name: 'CSR (Competitive Skill Rank)',
-              value: 'Your official leaderboard score, calculated conservatively as **μ - 1.5σ** to encourage active play.'
+              value: 'Your official leaderboard score, calculated conservatively as **μ - 3σ** to encourage active play.'
             },
             {
               name: 'Estimated Skill (μ — "Mu")',
