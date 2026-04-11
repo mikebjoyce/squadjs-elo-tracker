@@ -101,8 +101,10 @@
  *
  * Discord:
  *   discordClient              - Discord connector name.
- *   discordAdminChannelID      - Channel ID for admin round summaries.
- *   discordPublicChannelID     - Channel ID for public-facing output.
+ *   discordAdminChannelID      - Channel ID for admin commands.
+ *   discordPublicChannelID     - Channel ID for public-facing commands.
+ *   discordReportChannelID     - Channel ID for automated reports (round summaries, balance tracking). Defaults to admin channel if unset.
+ *   discordAdminRoleIDs        - Array of Role IDs required for Discord admin commands. Leave empty to allow all users in the admin channel.
  *   roundStartEmbedDelayMs     - Delay after round start before posting embed (default: 180000).
  *
  * "connectors": {
@@ -124,7 +126,9 @@
  *   "enablePublicIngameCommands": true,
  *   "discordClient": "discord",
  *   "discordAdminChannelID": "",
- *   "discordPublicChannelID": ""
+ *   "discordPublicChannelID": "",
+ *   "discordReportChannelID": "",
+ *   "discordAdminRoleIDs": []
  * }
  *
  * Author:
@@ -143,7 +147,7 @@ import { EloDiscord } from '../utils/elo-discord.js';
 import EloCommands from '../utils/elo-commands.js';
 
 export default class EloTracker extends BasePlugin {
-  static version = '1.0.2';
+  static version = '1.1.0';
 
   static get description() {
     return 'A SquadJS plugin that tracks player participation across rounds, computes individual ELO ratings using a TrueSkill-based algorithm, and persists all data via SQLite.';
@@ -177,7 +181,10 @@ export default class EloTracker extends BasePlugin {
         default: 'discord'
       },
       discordAdminChannelID: { required: false, default: '', type: 'string' },
-      discordPublicChannelID: { required: false, default: '', type: 'string' }
+      discordPublicChannelID: { required: false, default: '', type: 'string' },
+      discordReportChannelID: { required: false, default: '', type: 'string' },
+      discordAdminRoleIDs: { required: false, default: [], type: 'array' },
+      discordAdminRoleID: { required: false, default: '', type: 'string' }
     };
   }
 
@@ -202,6 +209,12 @@ export default class EloTracker extends BasePlugin {
 
     this.discordAdminChannel = null;
     this.discordPublicChannel = null;
+    this.discordReportChannel = null;
+
+    // Fallback logic
+    if ((!this.options.discordAdminRoleIDs || this.options.discordAdminRoleIDs.length === 0) && this.options.discordAdminRoleID) {
+      this.options.discordAdminRoleIDs = [this.options.discordAdminRoleID];
+    }
 
     this._isMounted = false;
     this.ready = false;
@@ -280,6 +293,14 @@ export default class EloTracker extends BasePlugin {
           Logger.verbose('EloTracker', 1, `Fetched public Discord channel: ${this.discordPublicChannel.name}`);
         } catch (err) {
           Logger.verbose('EloTracker', 1, `Could not fetch public Discord channel (ID: ${this.options.discordPublicChannelID}): ${err.message}`);
+        }
+      }
+      if (this.options.discordReportChannelID) {
+        try {
+          this.discordReportChannel = await this.options.discordClient.channels.fetch(this.options.discordReportChannelID);
+          Logger.verbose('EloTracker', 1, `Fetched report Discord channel: ${this.discordReportChannel.name}`);
+        } catch (err) {
+          Logger.verbose('EloTracker', 1, `Could not fetch report Discord channel (ID: ${this.options.discordReportChannelID}): ${err.message}`);
         }
       }
     }
@@ -372,7 +393,7 @@ export default class EloTracker extends BasePlugin {
     }
     
     if (!layer) {
-      Logger.verbose('EloTracker', 2, `[${source}] Layer object is completely null or undefined.`);
+      Logger.verbose('EloTracker', 3, `[${source}] Layer object is completely null or undefined.`);
       return false;
     }
     
@@ -470,9 +491,11 @@ export default class EloTracker extends BasePlugin {
    */
   async sendDelayedStartEmbed() {
     try {
+      const targetChannel = this.discordReportChannel || this.discordPublicChannel || this.discordAdminChannel;
+      if (!targetChannel) return;
       const embedData = this.buildRoundStartData();
       const embed = EloDiscord.buildRoundStartEmbed(embedData);
-      await EloDiscord.sendDiscordMessage(this.discordPublicChannel, { embeds: [embed] });
+      await EloDiscord.sendDiscordMessage(targetChannel, { embeds: [embed] });
       Logger.verbose('EloTracker', 1, 'Round start embed posted.');
     } catch (err) {
       Logger.verbose('EloTracker', 1, `Failed to post start embed: ${err.message}`);
@@ -495,11 +518,9 @@ export default class EloTracker extends BasePlugin {
         const embed = EloDiscord.buildRoundStartEmbed(embedData, 'manual');
         embed.title = `🔀 Post-Scramble Team Balance - ${embedData.layerName || 'Unknown'}`;
         
-        if (this.discordPublicChannel) {
-          await EloDiscord.sendDiscordMessage(this.discordPublicChannel, { embeds: [embed] });
-        }
-        if (this.discordAdminChannel && this.discordAdminChannel.id !== this.discordPublicChannel?.id) {
-          await EloDiscord.sendDiscordMessage(this.discordAdminChannel, { embeds: [embed] });
+        const targetChannel = this.discordReportChannel || this.discordPublicChannel || this.discordAdminChannel;
+        if (targetChannel) {
+          await EloDiscord.sendDiscordMessage(targetChannel, { embeds: [embed] });
         }
         Logger.verbose('EloTracker', 1, '[onTeamBalancerScramble] Post-scramble embed posted.');
       } catch (err) {
@@ -519,6 +540,12 @@ export default class EloTracker extends BasePlugin {
   async onServerInfoUpdated(info) {
     try {
       if (info && info.currentLayer) {
+        const incomingName = typeof info.currentLayer === 'string'
+          ? info.currentLayer
+          : info.currentLayer?.name;
+
+        if (this.lastKnownGoodLayer?.name === incomingName) return;
+
         await this.resolveLayerInfo(info.currentLayer, 'onServerInfoUpdated');
       }
     } catch (err) {
@@ -531,12 +558,9 @@ export default class EloTracker extends BasePlugin {
     let layerName = this.server.currentLayer?.name ?? '';
     
     if (!gameMode && !layerName) {
-      if (this.lastKnownGoodLayer) {
-        gameMode = this.lastKnownGoodLayer.gamemode;
-        layerName = this.lastKnownGoodLayer.name;
-      } else {
-        return null;
-      }
+      if (!this.lastKnownGoodLayer) return 'Unknown'; // distinct from null/"not ignored"
+      gameMode = this.lastKnownGoodLayer.gamemode;
+      layerName = this.lastKnownGoodLayer.name;
     }
 
     const gameModeLower = gameMode.toLowerCase();
@@ -553,11 +577,20 @@ export default class EloTracker extends BasePlugin {
   }
 
   async onRoundEnded(data) {
+    const gameMode = this.server.currentLayer?.gamemode
+      ?? this.lastKnownGoodLayer?.gamemode
+      ?? null;
+
+    const layerName = this.server.currentLayer?.name
+      ?? this.lastKnownGoodLayer?.name
+      ?? 'Unknown';
+
     if (!this.ready) {
       Logger.verbose('EloTracker', 1, '[onRoundEnded] Fired but plugin not ready. Skipping.');
-      if (this.discordAdminChannel) {
-        const embed = EloDiscord.buildRoundSkippedEmbed('Plugin not ready at round end', 0, this.server.currentLayer?.name ?? 'Unknown');
-        await EloDiscord.sendDiscordMessage(this.discordAdminChannel, { embeds: [embed] });
+      const targetReportChannel = this.discordReportChannel || this.discordAdminChannel;
+      if (targetReportChannel) {
+        const embed = EloDiscord.buildRoundSkippedEmbed('Plugin not ready at round end', 0, layerName);
+        await EloDiscord.sendDiscordMessage(targetReportChannel, { embeds: [embed] });
       }
       return;
     }
@@ -566,23 +599,25 @@ export default class EloTracker extends BasePlugin {
 
     // --- Eligibility checks ---
     const playerCount = this.server.players.length;
-    const gameMode = this.server.currentLayer?.gamemode ?? null;
 
     if (playerCount < this.options.minPlayersForElo) {
       Logger.verbose('EloTracker', 1, `[onRoundEnded] Skipping ELO update: player count ${playerCount} below threshold ${this.options.minPlayersForElo}.`);
-      if (this.discordAdminChannel) {
-        const embed = EloDiscord.buildRoundSkippedEmbed(`Player count below threshold (Gamemode: ${gameMode ?? 'Unknown'})`, playerCount, this.server.currentLayer?.name ?? 'Unknown');
-        await EloDiscord.sendDiscordMessage(this.discordAdminChannel, { embeds: [embed] });
+      const targetReportChannel = this.discordReportChannel || this.discordAdminChannel;
+      if (targetReportChannel) {
+        const embed = EloDiscord.buildRoundSkippedEmbed(`Player count below threshold (Gamemode: ${gameMode ?? 'Unknown'})`, playerCount, layerName);
+        await EloDiscord.sendDiscordMessage(targetReportChannel, { embeds: [embed] });
       }
       return;
     }
 
     const ignoredReason = this.isIgnoredMatch();
     if (ignoredReason) {
-      Logger.verbose('EloTracker', 1, `[onRoundEnded] Skipping ELO update: ignored match type "${ignoredReason}".`);
-      if (this.discordAdminChannel) {
-        const embed = EloDiscord.buildRoundSkippedEmbed(`Ignored match type: ${ignoredReason}`, playerCount, this.server.currentLayer?.name ?? 'Unknown');
-        await EloDiscord.sendDiscordMessage(this.discordAdminChannel, { embeds: [embed] });
+      const label = ignoredReason === 'Unknown' ? 'Game mode unknown — skipping (safe default)' : `Ignored match type: ${ignoredReason}`;
+      Logger.verbose('EloTracker', 1, `[onRoundEnded] ${label}`);
+      const targetReportChannel = this.discordReportChannel || this.discordAdminChannel;
+      if (targetReportChannel) {
+        const embed = EloDiscord.buildRoundSkippedEmbed(`Ignored match type: ${ignoredReason}`, playerCount, layerName);
+        await EloDiscord.sendDiscordMessage(targetReportChannel, { embeds: [embed] });
       }
       return;
     }
@@ -605,13 +640,14 @@ export default class EloTracker extends BasePlugin {
 
     if (eligible.length === 0) {
       Logger.verbose('EloTracker', 1, '[onRoundEnded] No eligible participants. Skipping ELO update.');
-      if (this.discordAdminChannel) {
+      const targetReportChannel = this.discordReportChannel || this.discordAdminChannel;
+      if (targetReportChannel) {
         const embed = EloDiscord.buildRoundSkippedEmbed(
           `No eligible participants (0 players met minParticipationRatio of ${this.options.minParticipationRatio})`,
           participants.length,
-          this.server.currentLayer?.name ?? 'Unknown'
+          layerName
         );
-        await EloDiscord.sendDiscordMessage(this.discordAdminChannel, { embeds: [embed] });
+        await EloDiscord.sendDiscordMessage(targetReportChannel, { embeds: [embed] });
       }
       return;
     }
@@ -627,13 +663,14 @@ export default class EloTracker extends BasePlugin {
 
     if (team1Eligible.length === 0 || team2Eligible.length === 0) {
       Logger.verbose('EloTracker', 1, `[onRoundEnded] Skipping ELO update: One or both teams have no eligible participants (Team 1: ${team1Eligible.length}, Team 2: ${team2Eligible.length}).`);
-      if (this.discordAdminChannel) {
+      const targetReportChannel = this.discordReportChannel || this.discordAdminChannel;
+      if (targetReportChannel) {
         const embed = EloDiscord.buildRoundSkippedEmbed(
           `One or both teams had no eligible participants (Gamemode: ${gameMode ?? 'Unknown'})`,
           playerCount,
-          this.server.currentLayer?.name ?? 'Unknown'
+          layerName
         );
-        await EloDiscord.sendDiscordMessage(this.discordAdminChannel, { embeds: [embed] });
+        await EloDiscord.sendDiscordMessage(targetReportChannel, { embeds: [embed] });
       }
       return;
     }
@@ -731,7 +768,7 @@ export default class EloTracker extends BasePlugin {
     try {
       await this.db.bulkUpsertPlayerStats(dbUpdates);
       await this.db.insertRoundHistory({
-        layerName: this.server.currentLayer?.name ?? 'Unknown',
+        layerName: layerName,
         winningTeamID,
         ticketDiff: ticketDiff,
         roundDuration: roundEndTime - this.session.roundStartTime,
@@ -745,7 +782,7 @@ export default class EloTracker extends BasePlugin {
     const matchRecord = {
       matchId: roundEndTime.toString(),
       endedAt: roundEndTime,
-      layerName: this.server.currentLayer?.name ?? 'Unknown',
+      layerName: layerName,
       gameMode: gameMode ?? 'Unknown',
       outcome,
       roundDuration: roundEndTime - this.session.roundStartTime,
@@ -802,13 +839,14 @@ export default class EloTracker extends BasePlugin {
     const calculationDuration = Date.now() - calculationStartTime;
 
     // --- Discord post ---
-    if (this.discordAdminChannel) {
+    const targetReportChannel = this.discordReportChannel || this.discordAdminChannel;
+    if (targetReportChannel) {
       try {
         const liveT1 = this._getMatchMetrics(this.server.players.filter(p => p.teamID === 1));
         const liveT2 = this._getMatchMetrics(this.server.players.filter(p => p.teamID === 2));
 
         const embed = EloDiscord.buildRoundSummaryEmbed({
-          layerName: this.server.currentLayer?.name ?? 'Unknown',
+          layerName: layerName,
           gameMode,
           winningTeamID,
           ticketDiff: ticketDiff,
@@ -821,7 +859,7 @@ export default class EloTracker extends BasePlugin {
           liveT2,
           calculationDuration
         });
-        await EloDiscord.sendDiscordMessage(this.discordAdminChannel, { embeds: [embed] });
+        await EloDiscord.sendDiscordMessage(targetReportChannel, { embeds: [embed] });
       } catch (err) {
         Logger.verbose('EloTracker', 1, `[onRoundEnded] Discord post failed: ${err.message}`);
       }
@@ -874,7 +912,7 @@ export default class EloTracker extends BasePlugin {
     };
 
     return {
-      layerName: this.server.currentLayer?.name ?? 'Unknown',
+      layerName: this.server.currentLayer?.name ?? this.lastKnownGoodLayer?.name ?? 'Unknown',
       roundStartTime: this.session.roundStartTime,
       t1, t2,
       muDelta,

@@ -26,8 +26,8 @@
  *
  * ─── NOTES ───────────────────────────────────────────────────────
  *
- * - Disconnects are intentionally NOT tracked. Segments remain open
- *   until endRound() closes them. This prevents early-leaver penalties.
+ * - Disconnects are tracked during updatePlayers(). If a player leaves,
+ *   their active segment is closed. Rejoining opens a new segment.
  * - Assigned team = the team the player spent the most time on.
  *   Defaults to team 1 on a tie or if no time was recorded.
  * - participationRatio is clamped to [0.0, 1.0]. It represents the
@@ -63,16 +63,19 @@ export default class EloSessionManager {
 
   /**
    * Updates the session map based on the current player list.
-   * Handles joins and team switches.
-   * Disconnects are intentionally ignored (segments remain open).
+   * Handles joins, team switches, and disconnects.
+   * If a player is no longer in the snapshot, their segment is closed.
    * 
    * @param {Array<{eosID: string, name: string, steamID: string, teamID: number}>} currentPlayers 
    */
   updatePlayers(currentPlayers, timestamp = Date.now()) {
     if (!this.roundStartTime) return;
 
+    const currentPlayerIDs = new Set();
+
     for (const player of currentPlayers) {
       const { eosID, name, steamID, teamID } = player;
+      currentPlayerIDs.add(eosID);
 
       if (!this.sessions.has(eosID)) {
         // Condition: eosID in currentPlayers, not in session map
@@ -124,8 +127,17 @@ export default class EloSessionManager {
         // Condition: Team unchanged -> No action
       }
     }
+
     // Condition: eosID in session map, not in currentPlayers
-    // Action: Leave segment OPEN. (Implicitly handled by doing nothing for those IDs)
+    // Action: Close active segment (player disconnected)
+    for (const [eosID, session] of this.sessions.entries()) {
+      if (!currentPlayerIDs.has(eosID)) {
+        if (session.activeSegment && session.activeSegment.leaveTime === null) {
+          session.activeSegment.leaveTime = timestamp;
+          session.activeSegment = null; // Prepare for possible rejoin
+        }
+      }
+    }
   }
 
   /**

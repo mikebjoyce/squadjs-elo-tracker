@@ -27,6 +27,9 @@
  *     importPlayerStats(records)       — Bulk restore from export.
  *     pruneStaleEntries(minRounds)     — Delete old low-activity records.
  *
+ *   Leaderboard and rank calculation methods internally apply a
+ *   "Conservative Rating" formula (μ - 1.5σ) instead of raw Mu.
+ *
  * ─── DEPENDENCIES ────────────────────────────────────────────────
  *
  * sequelize (Sequelize)
@@ -58,6 +61,8 @@
 
 import Sequelize from 'sequelize';
 import Logger from '../../core/logger.js';
+
+const SIGMA_MULTIPLIER = 1.5;
 
 export default class EloDatabase {
   constructor(server, options, connectors) {
@@ -394,7 +399,7 @@ export default class EloDatabase {
               [Sequelize.Op.gte]: minRounds
             }
           },
-          order: [['mu', 'DESC']],
+          order: [[Sequelize.literal(`(mu - (${SIGMA_MULTIPLIER} * sigma))`), 'DESC']],
           limit: limit,
           offset: offset
         });
@@ -406,20 +411,20 @@ export default class EloDatabase {
     }
   }
 
-  async getPlayerRank(mu, minRounds = 0) {
+  async getPlayerRank(consRating, minRounds = 0) {
     if (!this.sequelize) return 0;
     try {
       return await this._executeWithRetry(async () => {
+        const whereClause = minRounds > 0 ? { roundsPlayed: { [Sequelize.Op.gte]: minRounds } } : {};
+        whereClause[Sequelize.Op.and] = Sequelize.literal(`(mu - (${SIGMA_MULTIPLIER} * sigma)) > ${Number(consRating)}`);
+
         const higherRanked = await this.models.PlayerStats.count({
-          where: {
-            mu: { [Sequelize.Op.gt]: mu },
-            ...(minRounds > 0 && { roundsPlayed: { [Sequelize.Op.gte]: minRounds } })
-          }
+          where: whereClause
         });
         return higherRanked + 1;
       });
     } catch (error) {
-      Logger.verbose('EloTracker', 1, `[DB] Error fetching player rank for mu ${mu}: ${error.message}`);
+      Logger.verbose('EloTracker', 1, `[DB] Error fetching player rank for consRating ${consRating}: ${error.message}`);
       return 0;
     }
   }
