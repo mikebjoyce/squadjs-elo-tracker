@@ -891,6 +891,7 @@ export default class EloTracker extends BasePlugin {
     const t2 = this._getMatchMetrics(t2Players);
 
     const muDelta = Math.abs(t1.avgMu - t2.avgMu);
+    const top15Delta = Math.abs(t1.top15Mu - t2.top15Mu);
     const regDelta = Math.abs(t1.tierStats.rCount - t2.tierStats.rCount);
 
     const regHigher = Math.max(t1.tierStats.rCount, t2.tierStats.rCount);
@@ -916,6 +917,7 @@ export default class EloTracker extends BasePlugin {
       roundStartTime: this.session.roundStartTime,
       t1, t2,
       muDelta,
+      top15Delta,
       regDelta,
       flags,
       veteranLead,
@@ -930,6 +932,7 @@ export default class EloTracker extends BasePlugin {
 
     let vCount = 0, pCount = 0, rCount = 0;
     let totalMu = 0, totalRegMu = 0;
+    const allMus = [];
 
     for (const p of players) {
       const cached = this.eloCache.get(p.eosID);
@@ -937,6 +940,7 @@ export default class EloTracker extends BasePlugin {
       const rounds = cached?.roundsPlayed ?? 0;
 
       totalMu += mu;
+      allMus.push(mu);
       if (rounds >= thresholds.regularMinGames) {
         rCount++;
         totalRegMu += mu;
@@ -950,12 +954,19 @@ export default class EloTracker extends BasePlugin {
     const count = players.length;
     const veterancy = count > 0 ? rCount / count : 0;
 
+    // Top 15 average: sort descending, take up to 15, average them
+    const top15Slice = [...allMus].sort((a, b) => b - a).slice(0, 15);
+    const top15Mu = top15Slice.length > 0
+      ? top15Slice.reduce((s, v) => s + v, 0) / top15Slice.length
+      : defaultMu;
+
     return {
       count,
       tierStats: { vCount, pCount, rCount },
       tierString: `${vCount} Visitors | ${pCount} Prov. | ${rCount} Regs`,
       avgMu: count > 0 ? totalMu / count : defaultMu,
       avgRegMu: rCount > 0 ? totalRegMu / rCount : null,
+      top15Mu,
       veterancy
     };
   }
