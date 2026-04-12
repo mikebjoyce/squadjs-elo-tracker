@@ -33,28 +33,39 @@
  *   participationRatio before writing to the database.
  * - deltaSigma is a REDUCTION value, applied as:
  *     newSigma = sigma - deltaSigma
- *   Do NOT change the subtraction to addition.
- * - c === 0 guard prevents divide-by-zero when all players have zero
- *   sigma and BETA is also zero (edge case; should not occur in practice).
- * - teamMu is computed as the SUM across players, weighted by their
- *   participationRatio. This prevents transient players from artificially
- *   inflating or deflating the team's perceived strength.
- *
- * Author:
+   *   Do NOT change the subtraction to addition.
+   * - c === 0 guard prevents divide-by-zero when all players have zero
+   *   sigma and BETA is also zero (edge case; should not occur in practice).
+   * - teamMu is computed as the SUM across players, weighted by their
+   *   participationRatio. This prevents transient players from artificially
+   *   inflating or deflating the team's perceived strength.
+   * - The MU_DEFAULT, SIGMA_DEFAULT, BETA, and TAU constants form a mathematically
+   *   interdependent set. If you wish to change the scale of the system,
+   *   you must update all constants proportionally.
+   *
+   * Author:
  * Discord: `real_slacker`
  *
  * ═══════════════════════════════════════════════════════════════
  */
 
 export default class EloCalculator {
-  // Constants
-  static MU_DEFAULT = 25.0;
-  static SIGMA_DEFAULT = 25.0 / 3.0;
-  static TAU = 25.0 / 100.0;
+  // --- ELO Scale Constants ---
+  // WARNING: These constants form an interdependent mathematical set. 
+  // The system is designed around a 0-50 skill scale (with 25.0 as the midpoint).
+  // If you change ONE of these values, you MUST change all others proportionally.
+  // For example, to double the scale to 0-100, multiply ALL of these by 2.
+  static MU_DEFAULT = 25.0;              // Base skill estimate for new players
+  static SIGMA_DEFAULT = 25.0 / 3.0;     // Initial uncertainty (mu / 3)
+  static TAU = 25.0 / 100.0;             // Dynamic uncertainty floor (mu / 100)
+  
+  static SIGMA_MULTIPLIER = 3.0; // Used for CSR (Competitive Skill Rank) calculation: CSR = mu - 3 * sigma
 
   // Configurable constants (exposed as static properties)
-  static BETA = 25.0 / 6.0;
-  static DRAW_PROBABILITY = 0.01;
+  // Note: These are immutable for the math engine. Changing these requires 
+  // proportional changes to all related constants.
+  static BETA = 25.0 / 6.0;              // Skill chain distance (mu / 6). Affects how fast ratings shift.
+  static DRAW_PROBABILITY = 0.01;        // Probability of a draw. (1%)
 
   /**
    * Calculates the probability density function (PDF) of the standard normal distribution.
@@ -161,7 +172,7 @@ export default class EloCalculator {
     const absDiff = this._cdf(e - t) - this._cdf(-e - t);
     if (absDiff === 0) return vDraw * vDraw;
     
-    const term = ((-e - t) * this._pdf(-e - t) - (e - t) * this._pdf(e - t)) / absDiff;
+    const term = ((e - t) * this._pdf(e - t) - (-e - t) * this._pdf(-e - t)) / absDiff;
     return vDraw * vDraw + term;
   }
 

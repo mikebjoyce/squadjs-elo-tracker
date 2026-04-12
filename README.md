@@ -1,4 +1,4 @@
-# EloTracker Plugin v1.1.1
+# EloTracker Plugin v1.2.0
 
 **SquadJS Plugin for Skill-Based Player Rating**
 
@@ -15,6 +15,7 @@ Designed for Squad servers to surface skill data, reward consistent players, and
 * **TrueSkill Rating Engine:** Implements the full TrueSkill algorithm with team-based win, loss, and draw outcomes.
 * **Participation Weighting:** Rating changes are scaled by how long a player was actually on their team. Late joiners and early leavers receive proportionally smaller adjustments.
 * **Team-Switch Tracking:** Segment-based session tracking detects mid-round team switches. Players are assigned to the team they spent the most time on.
+* **Match Health Metrics:** Live tracking of skill balance, regular player parity, and Top 15 player averages to assess team fairness.
 * **Discord Integration:** Full-featured Discord bot interface for player lookups, leaderboards, and account linking.
 * **In-Game Commands:** Players can check their own rating and view the leaderboard directly from the in-game chat.
 * **Persistent Storage:** SQLite-backed storage via Sequelize. Round history, player stats, and plugin state survive server restarts.
@@ -91,8 +92,6 @@ Add the following to your `config.json`:
     "discordAdminRoleIDs": [],
     "eloLogPath": "./elo-match-log.jsonl",
     "minParticipationRatio": 0.15,
-    "defaultMu": 25.0,
-    "defaultSigma": 8.333,
     "minPlayersForElo": 80,
     "minRoundsForLeaderboard": 10,
     "roundStartEmbedDelayMs": 180000,

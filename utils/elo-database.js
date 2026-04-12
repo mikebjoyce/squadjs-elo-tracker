@@ -61,8 +61,7 @@
 
 import Sequelize from 'sequelize';
 import Logger from '../../core/logger.js';
-
-const SIGMA_MULTIPLIER = 3.0;
+import EloCalculator from './elo-calculator.js';
 
 export default class EloDatabase {
   constructor(server, options, connectors) {
@@ -151,11 +150,11 @@ export default class EloDatabase {
           },
           mu: {
             type: Sequelize.FLOAT,
-            defaultValue: 25.0
+            defaultValue: EloCalculator.MU_DEFAULT
           },
           sigma: {
             type: Sequelize.FLOAT,
-            defaultValue: 8.333
+            defaultValue: EloCalculator.SIGMA_DEFAULT
           },
           wins: {
             type: Sequelize.INTEGER,
@@ -299,11 +298,12 @@ export default class EloDatabase {
         const record = await this.models.PlayerStats.findOne({ where: { eosID: id } });
         if (record) return record.toJSON();
 
+        const escaped = id.replace(/%/g, '\\%').replace(/_/g, '\\_');
         const fuzzy = await this.models.PlayerStats.findOne({
           where: {
             [Sequelize.Op.or]: [
               { steamID: id },
-              { name: { [Sequelize.Op.like]: `%${id}%` } }
+              { name: { [Sequelize.Op.like]: `%${escaped}%` } }
             ]
           }
         });
@@ -348,11 +348,11 @@ export default class EloDatabase {
           });
           const existingMap = new Map(existing.map((r) => [r.eosID, r]));
 
-          for (const update of updates) {
+          const ops = updates.map(update => {
             const { eosID, ...fields } = update;
             const record = existingMap.get(eosID);
             if (record) {
-              await record.update({
+              return record.update({
                 mu: fields.mu,
                 sigma: fields.sigma,
                 wins: record.wins + (fields.wins ?? 0),
@@ -363,9 +363,11 @@ export default class EloDatabase {
                 steamID: fields.steamID ?? record.steamID
               }, { transaction: t });
             } else {
-              await this.models.PlayerStats.create({ eosID, ...fields }, { transaction: t });
+              return this.models.PlayerStats.create({ eosID, ...fields }, { transaction: t });
             }
-          }
+          });
+          
+          await Promise.all(ops);
         });
       });
     } catch (error) {
@@ -399,7 +401,7 @@ export default class EloDatabase {
               [Sequelize.Op.gte]: minRounds
             }
           },
-          order: [[Sequelize.literal(`(mu - (${SIGMA_MULTIPLIER} * sigma))`), 'DESC']],
+          order: [[Sequelize.literal(`(mu - (${EloCalculator.SIGMA_MULTIPLIER} * sigma))`), 'DESC']],
           limit: limit,
           offset: offset
         });
@@ -416,7 +418,8 @@ export default class EloDatabase {
     try {
       return await this._executeWithRetry(async () => {
         const whereClause = minRounds > 0 ? { roundsPlayed: { [Sequelize.Op.gte]: minRounds } } : {};
-        whereClause[Sequelize.Op.and] = Sequelize.literal(`(mu - (${SIGMA_MULTIPLIER} * sigma)) > ${Number(consRating)}`);
+        // Use Number(consRating) to prevent SQL injection since NaN-coercion produces an invalid but harmless query
+        whereClause[Sequelize.Op.and] = Sequelize.literal(`(mu - (${EloCalculator.SIGMA_MULTIPLIER} * sigma)) > ${Number(consRating)}`);
 
         const higherRanked = await this.models.PlayerStats.count({
           where: whereClause

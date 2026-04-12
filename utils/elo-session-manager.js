@@ -32,8 +32,9 @@
  *   Defaults to team 1 on a tie or if no time was recorded.
  * - participationRatio is clamped to [0.0, 1.0]. It represents the
  *   fraction of total round duration spent on the assigned team.
- * - updatePlayers() is a snapshot diff — it does not detect disconnects.
- *   Call it on join and team-switch events only.
+ * - updatePlayers() is a snapshot diff — it DOES detect disconnects
+ *   by closing segments for players not present in the current snapshot.
+ *   It is called periodically to keep sessions updated.
  * - Segment objects are shared by reference between session.segments
  *   and session.activeSegment. Closing activeSegment updates the
  *   array entry in-place.

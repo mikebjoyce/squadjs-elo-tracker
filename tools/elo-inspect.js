@@ -412,11 +412,13 @@ function cmdRound(targetId, db, mlog) {
   const getMatchMetrics = (players) => {
     let vCount = 0, pCount = 0, rCount = 0;
     let totalMu = 0, totalRegMu = 0;
+    const allMus = [];
 
     for (const p of players) {
       const mu = p.mu;
       const rounds = p.roundsPlayed ?? 0;
       totalMu += mu;
+      allMus.push(mu);
       if (rounds >= MIN_ROUNDS_RANKED) {
         rCount++;
         totalRegMu += mu;
@@ -430,12 +432,18 @@ function cmdRound(targetId, db, mlog) {
     const count = players.length;
     const veterancy = count > 0 ? rCount / count : 0;
 
+    const top15Slice = [...allMus].sort((a, b) => b - a).slice(0, 15);
+    const top15Mu = top15Slice.length > 0
+      ? top15Slice.reduce((s, v) => s + v, 0) / top15Slice.length
+      : 25.0;
+
     return {
       count,
       tierStats: { vCount, pCount, rCount },
       tierString: `${vCount} Visitors | ${pCount} Prov. | ${rCount} Regs`,
       avgMu: count > 0 ? totalMu / count : 25.0,
       avgRegMu: rCount > 0 ? totalRegMu / rCount : null,
+      top15Mu,
       veterancy
     };
   };
@@ -511,17 +519,21 @@ function cmdRound(targetId, db, mlog) {
   const t2 = processTeam(team2, team2Updates);
 
   const muDelta = Math.abs(t1.avgMu - t2.avgMu);
+  const top15Delta = Math.abs(t1.top15Mu - t2.top15Mu);
   const regDelta = Math.abs(t1.tierStats.rCount - t2.tierStats.rCount);
 
   const muLeadTeam = t1.avgMu >= t2.avgMu ? 1 : 2;
-  const veteranLead = t1.tierStats.rCount === t2.tierStats.rCount ? 'Tie' : (t1.tierStats.rCount > t2.tierStats.rCount ? 'Team 1' : 'Team 2');
+  const top15LeadTeam = t1.top15Mu >= t2.top15Mu ? 1 : 2;
+  const vetAdv = t1.tierStats.rCount === t2.tierStats.rCount ? 'Tie' : `Team ${t1.tierStats.rCount > t2.tierStats.rCount ? 1 : 2}`;
   
   const totalRegs = t1.tierStats.rCount + t2.tierStats.rCount;
   const leadRegs = Math.max(t1.tierStats.rCount, t2.tierStats.rCount);
   const t1Share = totalRegs > 0 ? Math.round((t1.tierStats.rCount / totalRegs) * 100) : 0;
   const t2Share = totalRegs > 0 ? Math.round((t2.tierStats.rCount / totalRegs) * 100) : 0;
-  const vetAdvText = regDelta === 0 ? 'Tie' : `${veteranLead} Advantage`;
-  const muAdvText = muDelta === 0 ? 'Balanced' : `Team ${muLeadTeam} Advantage`;
+  const leadShare = Math.max(t1Share, t2Share);
+  const vetAdvText = regDelta === 0 ? 'Tie' : `${vetAdv} advantage`;
+  const muAdvText = muDelta === 0 ? 'Balanced' : `Team ${muLeadTeam} advantage`;
+  const top15AdvText = top15Delta === 0 ? 'Balanced' : `Team ${top15LeadTeam} advantage`;
   const matchVeterancy = (t1.count + t2.count) > 0 ? totalRegs / (t1.count + t2.count) : 0;
 
   console.log();
@@ -532,8 +544,14 @@ function cmdRound(targetId, db, mlog) {
   console.log(`  Players:   ${b(matchPlayers.length)}`);
   console.log();
   console.log(b('  Match Health'));
-  console.log(`  Skill Balance:   ${muDelta.toFixed(2)}μ diff (${muAdvText})`);
-  console.log(`  Regular Balance: ${regDelta} Reg diff (${t1Share}% vs ${t2Share}% | ${vetAdvText})`);
+  
+  const muColor = muDelta < 1.0 ? g : (muDelta <= 2.5 ? y : r);
+  const top15Color = top15Delta < 1.0 ? g : (top15Delta <= 2.5 ? y : r);
+  const regColor = leadShare > 65 ? r : (leadShare > 55 ? y : g);
+
+  console.log(`  Skill Balance:   ${muColor(muDelta.toFixed(2) + 'μ Elo diff')} (${muAdvText})`);
+  console.log(`  Top 15 Balance:  ${top15Color(top15Delta.toFixed(2) + 'μ Elo diff')} (${top15AdvText})`);
+  console.log(`  Regular Balance: ${regColor(regDelta + ' Reg diff')} (${t1Share}% vs ${t2Share}% Share | ${vetAdvText})`);
   console.log(`  Veterancy:       ${(matchVeterancy * 100).toFixed(0)}%`);
   console.log();
 
@@ -554,6 +572,9 @@ function cmdRound(targetId, db, mlog) {
   console.log(row(fmtCount(t1.tierStats.rCount), 'Regulars', fmtCount(t2.tierStats.rCount)));
   console.log(d('   -----------------------------------'));
   console.log(row(fmtMu(t1.avgMu), 'Team Avg', fmtMu(t2.avgMu)));
+  console.log(row(fmtMu(t1.avgRegMu), 'Regs Avg', fmtMu(t2.avgRegMu)));
+  console.log(row(fmtMu(t1.top15Mu), 'Top 15 Avg', fmtMu(t2.top15Mu)));
+  console.log(d('   -----------------------------------')); 
   console.log(row(fmtPct(t1.veterancy), 'Veterancy', fmtPct(t2.veterancy)));
 
   console.log();

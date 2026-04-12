@@ -101,7 +101,7 @@ const EloCommands = {
             return await this.respond(player, 'No leaderboard data yet.');
           }
           const lines = players.map((p, i) => {
-            const consRating = p.mu - (SIGMA_MULTIPLIER * p.sigma);
+            const consRating = p.mu - (EloCalculator.SIGMA_MULTIPLIER * p.sigma);
             return `#${i + 1} ${p.name} — ${consRating.toFixed(1)} (${p.wins}W/${p.losses}L)`;
           });
           return await this.respond(player, ['=== ELO Leaderboard ===', ...lines].join('\n'));
@@ -121,7 +121,7 @@ const EloCommands = {
 
         const minRounds = this.options.minRoundsForLeaderboard;
         let rankLine;
-        const consRating = record.mu - (SIGMA_MULTIPLIER * record.sigma);
+        const consRating = record.mu - (EloCalculator.SIGMA_MULTIPLIER * record.sigma);
         if (record.roundsPlayed < minRounds) {
           rankLine = `Rank: Provisional — ${record.roundsPlayed}/${minRounds} rounds`;
         } else {
@@ -192,7 +192,7 @@ const EloCommands = {
           if (!record) {
             return await this.respond(player, `No player found: ${identifier}`);
           }
-          const defaults = { mu: this.options.defaultMu, sigma: this.options.defaultSigma, wins: 0, losses: 0, roundsPlayed: 0 };
+          const defaults = { mu: EloCalculator.MU_DEFAULT, sigma: EloCalculator.SIGMA_DEFAULT, wins: 0, losses: 0, roundsPlayed: 0 };
           await this.db.upsertPlayerStats(record.eosID, defaults);
           if (this.eloCache.has(record.eosID)) { this.eloCache.set(record.eosID, { mu: defaults.mu, sigma: defaults.sigma }); }
           Logger.verbose('EloTracker', 2, `[EloCommands] Admin ${player.name} reset ELO for ${record.name}`);
