@@ -124,6 +124,7 @@ const generateMatrixTable = (t1, t2) => {
     '----------------------------------',
     row(fmtMu(t1.avgMu), 'Team Avg', fmtMu(t2.avgMu)),
     row(fmtMu(t1.avgRegMu), 'Regs Avg', fmtMu(t2.avgRegMu)),
+    row(fmtMu(t1.top15Mu), 'Top 15 Avg', fmtMu(t2.top15Mu)),
     '----------------------------------',
     row(fmtPct(t1.veterancy), 'Veterancy', fmtPct(t2.veterancy)),
     '```'
@@ -228,9 +229,11 @@ export const EloDiscord = {
     const vUI = getVeterancyUI(matchVeterancy);
 
     const muDelta = Math.abs(liveT1.avgMu - liveT2.avgMu);
+    const top15Delta = Math.abs(liveT1.top15Mu - liveT2.top15Mu);
     const regDelta = Math.abs(liveT1.tierStats.rCount - liveT2.tierStats.rCount);
 
     const muLeadTeam = liveT1.avgMu >= liveT2.avgMu ? 1 : 2;
+    const top15LeadTeam = liveT1.top15Mu >= liveT2.top15Mu ? 1 : 2;
     const vetAdv = liveT1.tierStats.rCount === liveT2.tierStats.rCount ? 'Tie' : `Team ${liveT1.tierStats.rCount > liveT2.tierStats.rCount ? 1 : 2}`;
     
     const totalRegs = liveT1.tierStats.rCount + liveT2.tierStats.rCount;
@@ -239,9 +242,10 @@ export const EloDiscord = {
     const t1Share = totalRegs > 0 ? Math.round((liveT1.tierStats.rCount / totalRegs) * 100) : 0;
     const t2Share = totalRegs > 0 ? Math.round((liveT2.tierStats.rCount / totalRegs) * 100) : 0;
     const leadShare = Math.max(t1Share, t2Share);
-    const vetAdvText = regDelta === 0 ? 'Tie' : `${vetAdv} Advantage`;
+    const vetAdvText = regDelta === 0 ? 'Tie' : `${vetAdv} advantage`;
 
-    const muAdvText = muDelta === 0 ? 'Balanced' : `Team ${muLeadTeam} Advantage`;
+    const muAdvText = muDelta === 0 ? 'Balanced' : `Team ${muLeadTeam} advantage`;
+    const top15AdvText = top15Delta === 0 ? 'Balanced' : `Team ${top15LeadTeam} advantage`;
 
     const formatRatingChanges = (stats) => {
       const muSign = stats.avgDeltaMu >= 0 ? '+' : '';
@@ -264,6 +268,7 @@ export const EloDiscord = {
           name: 'Disparity', 
           value: [
             `**Skill Balance:** ${getEloEmoji(muDelta)} ${muDelta.toFixed(2)}μ Elo diff (${muAdvText})`,
+            `**Top 15 Balance:** ${getEloEmoji(top15Delta)} ${top15Delta.toFixed(2)}μ Elo diff (${top15AdvText})`,
             `**Regular Balance:** ${getRegEmoji(leadShare)} ${regDelta} Reg diff (${t1Share}% vs ${t2Share}% Share | ${vetAdvText})`
           ].join('\n'), 
           inline: false 
@@ -455,12 +460,13 @@ export const EloDiscord = {
       };
     }
 
-    const { layerName, t1, t2, muDelta, regDelta, veteranLead, matchVeterancy, roundStartTime, totalPlayerCount } = data;
+    const { layerName, t1, t2, muDelta, top15Delta, regDelta, veteranLead, matchVeterancy, roundStartTime, totalPlayerCount } = data;
 
     const vUI = getVeterancyUI(matchVeterancy);
     const matrixTable = generateMatrixTable(t1, t2);
 
     const muLeadTeam = t1.avgMu >= t2.avgMu ? 1 : 2;
+    const top15LeadTeam = t1.top15Mu >= t2.top15Mu ? 1 : 2;
     
     const totalRegs = t1.tierStats.rCount + t2.tierStats.rCount;
     const leadRegs = Math.max(t1.tierStats.rCount, t2.tierStats.rCount);
@@ -468,9 +474,10 @@ export const EloDiscord = {
     const t1Share = totalRegs > 0 ? Math.round((t1.tierStats.rCount / totalRegs) * 100) : 0;
     const t2Share = totalRegs > 0 ? Math.round((t2.tierStats.rCount / totalRegs) * 100) : 0;
     const leadShare = Math.max(t1Share, t2Share);
-    const vetAdvText = regDelta === 0 ? 'Tie' : `${veteranLead} Advantage`;
+    const vetAdvText = regDelta === 0 ? 'Tie' : `${veteranLead} advantage`;
 
-    const muAdvText = muDelta === 0 ? 'Balanced' : `Team ${muLeadTeam} Advantage`;
+    const muAdvText = muDelta === 0 ? 'Balanced' : `Team ${muLeadTeam} advantage`;
+    const top15AdvText = top15Delta === 0 ? 'Balanced' : `Team ${top15LeadTeam} advantage`;
 
     const title = type === 'manual'
       ? `📊 Live Round Info - ${layerName}`
@@ -485,6 +492,7 @@ export const EloDiscord = {
           name: 'Match Health',
           value: [
             `**Skill Balance:** ${getEloEmoji(muDelta)} ${muDelta.toFixed(2)}μ Elo diff (${muAdvText})`,
+            `**Top 15 Balance:** ${getEloEmoji(top15Delta)} ${top15Delta.toFixed(2)}μ Elo diff (${top15AdvText})`,
             `**Regular Balance:** ${getRegEmoji(leadShare)} ${regDelta} Reg diff (${t1Share}% vs ${t2Share}% Share | ${vetAdvText})`
           ].join('\n'),
         inline: false
