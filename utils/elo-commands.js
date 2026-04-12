@@ -36,7 +36,7 @@
  * - !elo with no sub-command falls through to the player lookup
  *   path using the full args string as the identifier.
  *
- *   Calculates and displays a "Conservative Rating" (μ - 1.5σ) 
+ *   Calculates and displays a "Competitive Skill Rank" (CSR) (μ - 3.0σ)
  *   as the primary player rank to encourage active play.
  *
  * Author:
@@ -47,7 +47,7 @@
 
 import Logger from '../../core/logger.js';
 
-const SIGMA_MULTIPLIER = 1.5;
+const SIGMA_MULTIPLIER = 3.0;
 
 const EloCommands = {
   register(tracker) {
@@ -133,7 +133,7 @@ const EloCommands = {
         return await this.respond(player, [
           `=== ${record.name} ===`,
           rankLine,
-          `CSR: ${consRating.toFixed(2)} (μ - 1.5σ)`,
+          `CSR: ${consRating.toFixed(2)} (μ - 3.0σ)`,
           `Estimated Skill: ${record.mu.toFixed(2)} μ | Certainty: ${record.sigma.toFixed(2)} σ`,
           `Record: ${record.wins}W / ${record.losses}L (${record.roundsPlayed} rounds)`
         ].join('\n'));

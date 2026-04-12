@@ -20,15 +20,15 @@
  *     upsertPlayerStats(eosID, fields) — Single-record upsert.
  *     bulkUpsertPlayerStats(updates)   — Batch upsert in one transaction.
  *     insertRoundHistory(data)         — Append a round record.
- *     getLeaderboard(limit, minRounds, offset) — Top players by mu, with optional offset.
- *     getPlayerRank(mu, minRounds)     — Rank of a given mu value.
+ *     getLeaderboard(limit, minRounds, offset) — Top players by CSR, with optional offset.
+ *     getPlayerRank(consRating, minRounds) — Rank of a given CSR value.
  *     getTotalRankedPlayers(minRounds) — Count of players meeting the minimum rounds threshold.
  *     exportPlayerStats()              — Full table dump as plain objects.
  *     importPlayerStats(records)       — Bulk restore from export.
  *     pruneStaleEntries(minRounds)     — Delete old low-activity records.
  *
  *   Leaderboard and rank calculation methods internally apply a
- *   "Conservative Rating" formula (μ - 1.5σ) instead of raw Mu.
+ *   "Competitive Skill Rank" (CSR) formula (μ - 3.0σ) instead of raw Mu.
  *
  * ─── DEPENDENCIES ────────────────────────────────────────────────
  *

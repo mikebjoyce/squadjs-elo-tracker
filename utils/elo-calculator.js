@@ -14,7 +14,8 @@
  * EloCalculator (default)
  *   Static-only class. All methods and constants are static.
  *     computeTeamUpdate(team1, team2, outcome)
- *       Core update method — returns raw deltaMu/deltaSigma per player.
+ *       Core update method — returns raw deltaMu/deltaSigma per player,
+ *       normalising effective team sizes to prevent variance inflation.
  *     getDefaultRating()
  *       Returns the default { mu, sigma } for a new player.
  *     BETA, DRAW_PROBABILITY
