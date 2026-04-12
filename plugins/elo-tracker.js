@@ -706,6 +706,8 @@ export default class EloTracker extends BasePlugin {
 
         const newMu = rating.mu + scaledDeltaMu;
         const newSigma = Math.max(rating.sigma - scaledDeltaSigma, 0.5);
+        const wins = (rating.wins ?? 0) + (isWinner ? 1 : 0);
+        const losses = (rating.losses ?? 0) + (isLoser ? 1 : 0);
 
         dbUpdates.push({
           eosID: player.eosID,
@@ -731,7 +733,7 @@ export default class EloTracker extends BasePlugin {
         }
 
         // Update cache immediately
-        this.eloCache.set(player.eosID, { mu: newMu, sigma: newSigma, roundsPlayed: rounds + 1 });
+        this.eloCache.set(player.eosID, { mu: newMu, sigma: newSigma, roundsPlayed: rounds + 1, wins, losses });
       });
 
       // Calculate Spread Snapshot
@@ -834,7 +836,7 @@ export default class EloTracker extends BasePlugin {
         })
       ]
     };
-    this._appendMatchLog(matchRecord);
+    this._appendMatchLog(matchRecord).catch(err => Logger.verbose('EloTracker', 1, `Failed to append match log: ${err.message}`));
 
     const calculationDuration = Date.now() - calculationStartTime;
 
