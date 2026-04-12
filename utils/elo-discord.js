@@ -59,8 +59,7 @@
  */
 
 import Logger from '../../core/logger.js';
-
-const SIGMA_MULTIPLIER = 3;
+import EloCalculator from './elo-calculator.js';
 
 const formatDuration = (ms) => {
   const seconds = Math.floor((ms / 1000) % 60);
@@ -232,7 +231,6 @@ export const EloDiscord = {
     const regDelta = Math.abs(liveT1.tierStats.rCount - liveT2.tierStats.rCount);
 
     const muLeadTeam = liveT1.avgMu >= liveT2.avgMu ? 1 : 2;
-    // const regMuLeadTeam = (liveT1.avgRegMu || 0) >= (liveT2.avgRegMu || 0) ? 1 : 2;
     const vetAdv = liveT1.tierStats.rCount === liveT2.tierStats.rCount ? 'Tie' : `Team ${liveT1.tierStats.rCount > liveT2.tierStats.rCount ? 1 : 2}`;
     
     const totalRegs = liveT1.tierStats.rCount + liveT2.tierStats.rCount;
@@ -243,17 +241,7 @@ export const EloDiscord = {
     const leadShare = Math.max(t1Share, t2Share);
     const vetAdvText = regDelta === 0 ? 'Tie' : `${vetAdv} Advantage`;
 
-    // const isSevere = (muDelta > DISPARITY_THRESHOLDS.SEVERE_MU) || 
-    //                  (leadShare > DISPARITY_THRESHOLDS.SEVERE_SHARE) || 
-    //                  (muDelta > DISPARITY_THRESHOLDS.SEVERE_MIXED_MU && leadShare > DISPARITY_THRESHOLDS.SEVERE_MIXED_SHARE);
-    
-    // const isMinor = muDelta > DISPARITY_THRESHOLDS.MINOR_MU || leadShare > DISPARITY_THRESHOLDS.MINOR_SHARE;
-    
-    // const leadTeamStatus = muDelta >= DISPARITY_THRESHOLDS.LEAD_MU_MIN ? muLeadTeam : (regDelta > 0 ? (team1Summary.tierStats.rCount > team2Summary.tierStats.rCount ? 1 : 2) : 1);
-    
-    // const statusLine = isSevere ? `🔴 Severe Team ${leadTeamStatus} Advantage` : (isMinor ? `🟡 Minor Team ${leadTeamStatus} Advantage` : '🟢 Match Balanced');
     const muAdvText = muDelta === 0 ? 'Balanced' : `Team ${muLeadTeam} Advantage`;
-    // const mixedNote = muLeadTeam !== regMuLeadTeam ? '\n⚠️ **Mixed Advantage**' : '';
 
     const formatRatingChanges = (stats) => {
       const muSign = stats.avgDeltaMu >= 0 ? '+' : '';
@@ -296,7 +284,7 @@ export const EloDiscord = {
   buildPlayerStatsEmbed(player, rank, totalRanked, totalPlayers, provisional = false, localLeaderboard = null, minRounds = 10) {
     const { name, mu, sigma, wins, losses, roundsPlayed } = player;
 
-    const consRating = mu - (SIGMA_MULTIPLIER * sigma);
+    const consRating = mu - (EloCalculator.SIGMA_MULTIPLIER * sigma);
 
     let topPercent;
     if (!provisional) {
@@ -360,7 +348,7 @@ export const EloDiscord = {
 
     if (localLeaderboard && localLeaderboard.length > 0) {
       const localLines = localLeaderboard.map(p => {
-        const pConsRating = p.mu - (SIGMA_MULTIPLIER * p.sigma);
+        const pConsRating = p.mu - (EloCalculator.SIGMA_MULTIPLIER * p.sigma);
         const line = `#${p.actualRank} ${p.name} — ${pConsRating.toFixed(1)} (${p.wins}W/${p.losses}L)`;
         if (p.eosID === player.eosID) {
           return `${line}  <<`;
@@ -387,7 +375,7 @@ export const EloDiscord = {
     const lines = players.slice(0, limit).map((p, i) => {
       const currentRank = startRank + i;
       const paddedRank = currentRank.toString().padStart(2, ' ');
-      const consRating = p.mu - (SIGMA_MULTIPLIER * p.sigma);
+      const consRating = p.mu - (EloCalculator.SIGMA_MULTIPLIER * p.sigma);
       const line = `#${paddedRank} ${p.name} — ${consRating.toFixed(1)} (${p.wins}W/${p.losses}L)`;
       if (targetRank && currentRank === targetRank) {
         return `${line}  <<`;
@@ -473,7 +461,6 @@ export const EloDiscord = {
     const matrixTable = generateMatrixTable(t1, t2);
 
     const muLeadTeam = t1.avgMu >= t2.avgMu ? 1 : 2;
-    // const regMuLeadTeam = (t1.avgRegMu || 0) >= (t2.avgRegMu || 0) ? 1 : 2;
     
     const totalRegs = t1.tierStats.rCount + t2.tierStats.rCount;
     const leadRegs = Math.max(t1.tierStats.rCount, t2.tierStats.rCount);
@@ -483,19 +470,7 @@ export const EloDiscord = {
     const leadShare = Math.max(t1Share, t2Share);
     const vetAdvText = regDelta === 0 ? 'Tie' : `${veteranLead} Advantage`;
 
-    // const isSevere = (muDelta > DISPARITY_THRESHOLDS.SEVERE_MU) || 
-    //                  (leadShare > DISPARITY_THRESHOLDS.SEVERE_SHARE) || 
-    //                  (muDelta > DISPARITY_THRESHOLDS.SEVERE_MIXED_MU && leadShare > DISPARITY_THRESHOLDS.SEVERE_MIXED_SHARE);
-    
-    // const isMinor = muDelta > DISPARITY_THRESHOLDS.MINOR_MU || leadShare > DISPARITY_THRESHOLDS.MINOR_SHARE;
-    
-    // const leadTeamStatus = muDelta >= DISPARITY_THRESHOLDS.LEAD_MU_MIN ? muLeadTeam : (regDelta > 0 ? (t1.tierStats.rCount > t2.tierStats.rCount ? 1 : 2) : 1);
-
-    // const statusLine = isSevere ? `🔴 Severe Team ${leadTeamStatus} Advantage` : (isMinor ? `🟡 Minor Team ${leadTeamStatus} Advantage` : '🟢 Match Balanced');
     const muAdvText = muDelta === 0 ? 'Balanced' : `Team ${muLeadTeam} Advantage`;
-    // const mixedNote = muLeadTeam !== regMuLeadTeam 
-    //   ? `\n⚠️ **Mixed Advantage:** T${muLeadTeam} has better Overall Avg, but T${regMuLeadTeam} has stronger Regs.` 
-    //   : '';
 
     const title = type === 'manual'
       ? `📊 Live Round Info - ${layerName}`
@@ -632,8 +607,8 @@ export const EloDiscord = {
 
           // Single player reset
           const defaults = {
-            mu: this.options.defaultMu,
-            sigma: this.options.defaultSigma,
+            mu: EloCalculator.MU_DEFAULT,
+            sigma: EloCalculator.SIGMA_DEFAULT,
             wins: 0,
             losses: 0,
             roundsPlayed: 0
@@ -737,8 +712,8 @@ export const EloDiscord = {
       }
 
       if (sub === 'explain') {
-        const initialMu = this.options.defaultMu;
-        const initialSigma = this.options.defaultSigma;
+        const initialMu = EloCalculator.MU_DEFAULT;
+        const initialSigma = EloCalculator.SIGMA_DEFAULT;
         const explainEmbed = {
           color: 0x3498db,
           title: '📖 How the ELO System Works',
@@ -816,7 +791,7 @@ export const EloDiscord = {
 
         const minRounds = this.options.minRoundsForLeaderboard;
         const provisional = player.roundsPlayed < minRounds;
-        const rank = provisional ? null : await this.db.getPlayerRank(player.mu - (SIGMA_MULTIPLIER * player.sigma), minRounds);
+        const rank = provisional ? null : await this.db.getPlayerRank(player.mu - (EloCalculator.SIGMA_MULTIPLIER * player.sigma), minRounds);
         const totalRanked = await this.db.getTotalRankedPlayers(minRounds);
         const totalPlayers = await this.db.getTotalPlayers();
 
@@ -871,7 +846,7 @@ export const EloDiscord = {
 
       const minRounds = this.options.minRoundsForLeaderboard;
       const provisional = player.roundsPlayed < minRounds;
-      const rank = provisional ? null : await this.db.getPlayerRank(player.mu - (SIGMA_MULTIPLIER * player.sigma), minRounds);
+      const rank = provisional ? null : await this.db.getPlayerRank(player.mu - (EloCalculator.SIGMA_MULTIPLIER * player.sigma), minRounds);
       const totalRanked = await this.db.getTotalRankedPlayers(minRounds);
       const totalPlayers = await this.db.getTotalPlayers();
 

@@ -65,7 +65,8 @@ export async function runAll() {
 
       try {
         // Dynamic import allows the runner to work even if files are missing during dev
-        const module = await import(suite.file);
+        const modulePath = new URL(suite.file, import.meta.url).href;
+        const module = await import(modulePath);
         
         // Expecting default export to be a function accepting runTest
         if (module.default && typeof module.default === 'function') {
@@ -75,7 +76,7 @@ export async function runAll() {
         }
       } catch (err) {
         if (err.code === 'ERR_MODULE_NOT_FOUND') {
-          console.log(`${COLORS.RED}  Skipped: File not found (${suite.file})${COLORS.RESET}`);
+          console.log(`${COLORS.RED}  Skipped: Module missing (${suite.file}): ${err.message}${COLORS.RESET}`);
         } else {
           console.error(`${COLORS.RED}  Error loading suite:${COLORS.RESET}`, err);
         }

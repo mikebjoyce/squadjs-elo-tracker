@@ -92,7 +92,7 @@ export default async function runSessionTests(runTest) {
       if (p1Data.segments.length !== 2) throw new Error(`Expected 2 segments for team switcher, got ${p1Data.segments.length}`);
     });
 
-    await runTest('Ghosting/Disconnects: Segment stays open', async () => {
+    await runTest('Ghosting/Disconnects: Segment closes correctly', async () => {
       const session = new EloSessionManager();
       const roundStart = 4000;
       mockNow = roundStart;
@@ -110,8 +110,8 @@ export default async function runSessionTests(runTest) {
 
       const p1Session = session.getPlayerSession('p1');
       if (!p1Session) throw new Error('Player 1 session disappeared after disconnect');
-      if (p1Session.activeSegment.leaveTime !== null) {
-        throw new Error('Player 1 segment was closed before round end');
+      if (p1Session.activeSegment !== null) {
+        throw new Error('Player 1 activeSegment was not set to null after disconnect');
       }
 
       const roundEnd = roundStart + 60 * MINUTE;
@@ -120,8 +120,8 @@ export default async function runSessionTests(runTest) {
       const p1Data = participants.find((p) => p.eosID === 'p1');
       if (!p1Data) throw new Error('Player 1 data not found in participants');
 
-      if (Math.abs(p1Data.participationRatio - 1.0) > 0.0001) {
-        throw new Error(`Expected participationRatio near 1.0 for disconnected player, got ${p1Data.participationRatio}`);
+      if (Math.abs(p1Data.participationRatio - 0.5) > 0.0001) {
+        throw new Error(`Expected participationRatio near 0.5 for disconnected player, got ${p1Data.participationRatio}`);
       }
     });
   } finally {

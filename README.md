@@ -1,4 +1,4 @@
-# EloTracker Plugin v1.1.0
+# EloTracker Plugin v1.2.0
 
 **SquadJS Plugin for Skill-Based Player Rating**
 
@@ -91,8 +91,6 @@ Add the following to your `config.json`:
     "discordAdminRoleIDs": [],
     "eloLogPath": "./elo-match-log.jsonl",
     "minParticipationRatio": 0.15,
-    "defaultMu": 25.0,
-    "defaultSigma": 8.333,
     "minPlayersForElo": 80,
     "minRoundsForLeaderboard": 10,
     "roundStartEmbedDelayMs": 180000,

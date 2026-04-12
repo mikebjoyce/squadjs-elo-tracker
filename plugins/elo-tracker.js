@@ -90,8 +90,6 @@
  *   eloLogPath                 - Path to JSONL file for round outcome history.
  *
  * ELO Algorithm:
- *   defaultMu                  - Starting skill estimate for new players (default: 25.0).
- *   defaultSigma               - Starting uncertainty for new players (default: 8.333).
  *   minParticipationRatio      - Min fraction of round played to earn ELO (default: 0.15).
  *
  * Eligibility:
@@ -117,8 +115,6 @@
  *   "database": "sqlite",
  *   "eloLogPath": "./elo-match-log.jsonl",
  *   "minParticipationRatio": 0.15,
- *   "defaultMu": 25.0,
- *   "defaultSigma": 8.333,
  *   "minPlayersForElo": 80,
  *   "minRoundsForLeaderboard": 10,
  *   "roundStartEmbedDelayMs": 180000,
@@ -137,7 +133,7 @@
  * ═══════════════════════════════════════════════════════════════
  */
 
-import { appendFileSync } from 'fs';
+import { appendFileSync, promises as fsPromises } from 'fs';
 import BasePlugin from './base-plugin.js';
 import Logger from '../../core/logger.js';
 import EloDatabase from '../utils/elo-database.js';
@@ -147,7 +143,7 @@ import { EloDiscord } from '../utils/elo-discord.js';
 import EloCommands from '../utils/elo-commands.js';
 
 export default class EloTracker extends BasePlugin {
-  static version = '1.1.0';
+  static version = '1.2.0';
 
   static get description() {
     return 'A SquadJS plugin that tracks player participation across rounds, computes individual ELO ratings using a TrueSkill-based algorithm, and persists all data via SQLite.';
@@ -167,8 +163,6 @@ export default class EloTracker extends BasePlugin {
       },
       eloLogPath: { required: false, default: './elo-match-log.jsonl', type: 'string' },
       minParticipationRatio: { default: 0.15, type: 'number' },
-      defaultMu: { default: 25.0, type: 'number' },
-      defaultSigma: { default: 8.333, type: 'number' },
       minPlayersForElo: { default: 80, type: 'number' },
       minRoundsForLeaderboard: { default: 10, type: 'number' },
       roundStartEmbedDelayMs: { required: false, default: 180000, type: 'number' },
@@ -221,6 +215,7 @@ export default class EloTracker extends BasePlugin {
     this._roundStartEmbedPending = null;
     this.lastRoundSnapshot = null;
     this.lastKnownGoodLayer = null;
+    this._scrambleEmbedTimer = null;
 
     // Bound listeners — mirror TeamBalancer pattern exactly
     this.listeners = {};
@@ -357,6 +352,11 @@ export default class EloTracker extends BasePlugin {
       this.options.discordClient.removeListener('message', this.listeners.onDiscordMessage);
     }
 
+    if (this._scrambleEmbedTimer) {
+      clearTimeout(this._scrambleEmbedTimer);
+      this._scrambleEmbedTimer = null;
+    }
+
     this.ready = false;
     this._isMounted = false;
     Logger.verbose('EloTracker', 1, 'Plugin unmounted.');
@@ -463,8 +463,8 @@ export default class EloTracker extends BasePlugin {
           for (const [eosID, record] of dbResults) {
             if (livePlayers.has(eosID)) {
               this.eloCache.set(eosID, record || {
-                mu: this.options.defaultMu,
-                sigma: this.options.defaultSigma,
+                mu: EloCalculator.MU_DEFAULT,
+                sigma: EloCalculator.SIGMA_DEFAULT,
                 roundsPlayed: 0,
                 wins: 0,
                 losses: 0
@@ -507,7 +507,7 @@ export default class EloTracker extends BasePlugin {
     
     Logger.verbose('EloTracker', 1, '[onTeamBalancerScramble] Event received. Waiting 5s to capture post-scramble state...');
     
-    setTimeout(async () => {
+    this._scrambleEmbedTimer = setTimeout(async () => {
       try {
         const embedData = this.buildRoundStartData();
         if (embedData.status === 'warming' || embedData.status === 'empty') {
@@ -656,7 +656,7 @@ export default class EloTracker extends BasePlugin {
 
     // --- Build team arrays with mu/sigma from cache ---
     const getRating = (eosID) =>
-      this.eloCache.get(eosID) ?? { mu: this.options.defaultMu, sigma: this.options.defaultSigma };
+      this.eloCache.get(eosID) ?? { mu: EloCalculator.MU_DEFAULT, sigma: EloCalculator.SIGMA_DEFAULT };
 
     const team1Eligible = eligible.filter(p => p.assignedTeamID === 1);
     const team2Eligible = eligible.filter(p => p.assignedTeamID === 2);
@@ -926,7 +926,7 @@ export default class EloTracker extends BasePlugin {
 
   _getMatchMetrics(players) {
     const thresholds = this.thresholds;
-    const defaultMu = this.options.defaultMu;
+    const defaultMu = EloCalculator.MU_DEFAULT;
 
     let vCount = 0, pCount = 0, rCount = 0;
     let totalMu = 0, totalRegMu = 0;
@@ -962,11 +962,11 @@ export default class EloTracker extends BasePlugin {
 
   getTeamElo(players) {
     if (!players || players.length === 0) {
-      return { averageMu: this.options.defaultMu, playerCount: 0 };
+      return { averageMu: EloCalculator.MU_DEFAULT, playerCount: 0 };
     }
     const total = players.reduce((sum, p) => {
       const cached = this.eloCache.get(p.eosID);
-      return sum + (cached ? cached.mu : this.options.defaultMu);
+      return sum + (cached ? cached.mu : EloCalculator.MU_DEFAULT);
     }, 0);
     return {
       averageMu: total / players.length,
@@ -978,13 +978,13 @@ export default class EloTracker extends BasePlugin {
     const results = await this.db.getPlayerStatsBatch(eosIDs);
     return new Map(eosIDs.map(id => [
         id,
-        results.get(id) ?? { mu: this.options.defaultMu, sigma: this.options.defaultSigma, roundsPlayed: 0 }
+        results.get(id) ?? { mu: EloCalculator.MU_DEFAULT, sigma: EloCalculator.SIGMA_DEFAULT, roundsPlayed: 0 }
     ]));
   }
 
-  _appendMatchLog(record) {
+  async _appendMatchLog(record) {
     try {
-      appendFileSync(this.options.eloLogPath, JSON.stringify(record) + '\n', 'utf8');
+      await fsPromises.appendFile(this.options.eloLogPath, JSON.stringify(record) + '\n', 'utf8');
     } catch (err) {
       Logger.verbose('EloTracker', 1, `[_appendMatchLog] Failed to write log: ${err.message}`);
     }
