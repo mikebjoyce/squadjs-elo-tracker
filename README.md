@@ -35,6 +35,7 @@ EloTracker uses a TrueSkill-derived algorithm — the same family of systems use
 | **CSR** | Competitive Skill Rank | Your visible score on the leaderboard. Calculated as **μ - 3.0σ** to encourage active play. |
 | **μ (mu)** | Base Skill | Your estimated true performance level. Starts at **25.0**. |
 | **σ (sigma)** | Uncertainty | The system's confidence in your rating. Starts at **~8.33** and decreases as you play. |
+| **τ (tau)** | Dynamic Floor | Prevents uncertainty from reaching zero, ensuring ratings can always adjust to future performance changes. Starts at **0.25**. |
 
 ### Calibration Stages
 
@@ -185,7 +186,7 @@ newSigma = sigma - deltaSigma
 
 This is intentional. **Do not change this to addition.**
 
-### bulkUpsert Is Incremental
+### bulkIncrementPlayerStats Is Incremental
 
 `bulkIncrementPlayerStats()` **adds** to existing `wins`, `losses`, and `roundsPlayed` counts. It does **not** overwrite them. Do not pass cumulative totals — pass only the delta for the current round.
 
