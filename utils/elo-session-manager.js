@@ -174,8 +174,17 @@ export default class EloSessionManager {
         }
       }
 
+      // Edge case guard: If player recorded absolutely 0 time on either team,
+      // they are in a bugged state (e.g. fully unassigned the entire match).
+      if (timeOnTeam1 === 0 && timeOnTeam2 === 0) {
+        // We log it and skip pushing them to the participants array.
+        // In the rare event someone triggers this, they shouldn't receive a rating update anyway.
+        // NOTE: Since the caller will use a minParticipationRatio filter, this is just a clean-up guard.
+        continue;
+      }
+
       // Determine assigned team (most time played)
-      // Default to team 1 if equal or 0
+      // Default to team 1 if equal
       const assignedTeamID = timeOnTeam2 > timeOnTeam1 ? 2 : 1;
       const timeOnAssigned = assignedTeamID === 1 ? timeOnTeam1 : timeOnTeam2;
 

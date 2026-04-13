@@ -45,7 +45,7 @@
  * - Restart recovery: on mount, persisted roundStartTime is compared to
  *   server.matchStartTime. If within 3 hours, the session resumes in-place.
  *   Otherwise a fresh round starts.
- * - Rating writes use bulkUpsertPlayerStats(), which INCREMENTS wins,
+ * - Rating writes use bulkIncrementPlayerStats(), which INCREMENTS wins,
  *   losses, and roundsPlayed. Pass only the round delta — not cumulative totals.
  * - ignoredGameModes matches against both gamemode and layerName
  *   (case-insensitive substring). Default: ["Seed", "Jensen"].
@@ -715,7 +715,7 @@ export default class EloTracker extends BasePlugin {
           name: player.name,
           mu: newMu,
           sigma: newSigma,
-          wins: isWinner ? 1 : 0,    // NOTE: bulkUpsertPlayerStats must INCREMENT not overwrite
+          wins: isWinner ? 1 : 0,    // NOTE: bulkIncrementPlayerStats must INCREMENT not overwrite
           losses: isLoser ? 1 : 0,
           roundsPlayed: 1,
           lastSeen: now
@@ -768,7 +768,7 @@ export default class EloTracker extends BasePlugin {
 
     // --- DB writes ---
     try {
-      await this.db.bulkUpsertPlayerStats(dbUpdates);
+      await this.db.bulkIncrementPlayerStats(dbUpdates);
       await this.db.insertRoundHistory({
         layerName: layerName,
         winningTeamID,

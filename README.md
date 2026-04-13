@@ -187,7 +187,7 @@ This is intentional. **Do not change this to addition.**
 
 ### bulkUpsert Is Incremental
 
-`bulkUpsertPlayerStats()` **adds** to existing `wins`, `losses`, and `roundsPlayed` counts. It does **not** overwrite them. Do not pass cumulative totals — pass only the delta for the current round.
+`bulkIncrementPlayerStats()` **adds** to existing `wins`, `losses`, and `roundsPlayed` counts. It does **not** overwrite them. Do not pass cumulative totals — pass only the delta for the current round.
 
 ---
 

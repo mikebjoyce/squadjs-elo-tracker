@@ -603,6 +603,26 @@ export const EloDiscord = {
             }
             this._resetConfirmPending = null;
             try {
+              // Auto-backup before wiping the database
+              try {
+                const players = await this.db.exportPlayerStats();
+                const payload = JSON.stringify({
+                  exportedAt: Date.now(),
+                  playerCount: players.length,
+                  players
+                }, null, 2);
+                const buffer = Buffer.from(payload, 'utf-8');
+                const filename = `elo-pre-reset-backup-${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
+                await message.channel.send({
+                  content: `📦 Auto-Backup before reset — ${players.length} players saved.`,
+                  files: [{ attachment: buffer, name: filename }]
+                });
+              } catch (backupErr) {
+                await EloDiscord.sendDiscordMessage(message.channel, { embeds: [EloDiscord.buildErrorEmbed('Auto-Backup Failed', backupErr)] });
+                await message.reply('⚠️ Reset aborted because the automatic pre-reset backup failed. Please fix the issue or run `!elo backup` manually.');
+                return;
+              }
+
               await this.db.models.PlayerStats.destroy({ where: {} });
               await this.db.models.RoundHistory.destroy({ where: {} });
               this.eloCache.clear();
@@ -671,6 +691,22 @@ export const EloDiscord = {
               await message.reply('Invalid backup format: missing players array.');
               return;
             }
+            
+            // Schema validation to ensure the JSON matches the expected player format
+            const isValidSchema = json.players.every(p => 
+              typeof p.eosID === 'string' &&
+              typeof p.mu === 'number' &&
+              typeof p.sigma === 'number' &&
+              typeof p.wins === 'number' &&
+              typeof p.losses === 'number' &&
+              typeof p.roundsPlayed === 'number'
+            );
+            
+            if (!isValidSchema) {
+              await message.reply('Invalid backup format: one or more players have a malformed schema.');
+              return;
+            }
+            
             await this.db.importPlayerStats(json.players);
             await EloDiscord.sendDiscordMessage(message.channel, {
               embeds: [EloDiscord.buildAdminConfirmEmbed('Restore Complete', `Restored ${json.players.length} players from backup.`)]

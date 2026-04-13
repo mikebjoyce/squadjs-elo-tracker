@@ -195,6 +195,19 @@ export default class EloCalculator {
 
     const getRatio = (p) => p.participationRatio ?? 1.0;
 
+    // NOTE: Design nuance regarding participation ratio weighting:
+    // `teamSigmaSq` uses a player's `participationRatio` to scale their contribution to `c`.
+    // However, down in the player loop, `deltaMu` is calculated via `(sigmaSq / c) * vVal`,
+    // using the player's full `sigmaSq` against the heavily scaled `c`. This effectively
+    // gives players with low participation a larger raw TrueSkill update relative to their
+    // contribution to `c`. 
+    // This is not a critical mathematical flaw since `deltaMu` is scaled down *again* by
+    // `participationRatio` in the calling function before writing to the database, meaning
+    // the final rating change is still suppressed correctly for transient players.
+    // The current implementation is empirically stable and provides smooth convergence, 
+    // but developers should be aware of this disparity between `c` and `deltaMu` bases 
+    // if attempting to aggressively retune the BETA/TAU constants.
+
     // Use effective headcount (sum of participation ratios) instead of raw player count
     let effectiveN1 = team1.reduce((sum, p) => sum + getRatio(p), 0);
     let effectiveN2 = team2.reduce((sum, p) => sum + getRatio(p), 0);

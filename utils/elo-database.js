@@ -18,7 +18,7 @@
  *     getPlayerStatsBatch(eosIDs)      — Bulk lookup; returns a Map.
  *     searchPlayer(identifier)         — Fuzzy search by eosID/steamID/name.
  *     upsertPlayerStats(eosID, fields) — Single-record upsert.
- *     bulkUpsertPlayerStats(updates)   — Batch upsert in one transaction.
+ *     bulkIncrementPlayerStats(updates) — Batch increment in one transaction.
  *     insertRoundHistory(data)         — Append a round record.
  *     getLeaderboard(limit, minRounds, offset) — Top players by CSR, with optional offset.
  *     getPlayerRank(consRating, minRounds) — Rank of a given CSR value.
@@ -44,7 +44,7 @@
  *   on SQLITE_BUSY with 200ms + random jitter backoff.
  * - A promise-chain mutex is attached to the Sequelize instance to
  *   serialise writes and prevent concurrent lock contention.
- * - bulkUpsertPlayerStats() INCREMENTS wins, losses, and roundsPlayed.
+ * - bulkIncrementPlayerStats() INCREMENTS wins, losses, and roundsPlayed.
  *   All other fields are overwritten. Do not pass cumulative totals.
  * - Models are stored on this.models and may be referenced externally
  *   (e.g. this.db.models.PlayerStats.destroy in elo-discord.js).
@@ -336,7 +336,7 @@ export default class EloDatabase {
     }
   }
 
-  async bulkUpsertPlayerStats(updates) {
+  async bulkIncrementPlayerStats(updates) {
     if (!this.sequelize) return null;
     try {
       return await this._executeWithRetry(async () => {
@@ -391,6 +391,13 @@ export default class EloDatabase {
     }
   }
 
+  /**
+   * Retrieves the top players based on Competitive Skill Rank (CSR).
+   * NOTE: This query accurately sorts by CSR (μ - 3.0σ) as defined 
+   * by EloCalculator.SIGMA_MULTIPLIER. This ensures a conservative skill 
+   * estimate is used for rankings, rewarding consistent play rather than 
+   * relying solely on raw estimated skill (μ).
+   */
   async getLeaderboard(limit = 20, minRounds = 10, offset = 0) {
     if (!this.sequelize) return [];
     try {
