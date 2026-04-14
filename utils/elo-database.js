@@ -213,6 +213,10 @@ export default class EloDatabase {
       );
 
       await this._executeWithRetry(async () => {
+        // Enforce WAL mode to prevent SQLITE_BUSY deadlocks in high-concurrency environments (e.g. DBLog + EloTracker writing simultaneously)
+        await this.sequelize.query('PRAGMA journal_mode=WAL;');
+        await this.sequelize.query('PRAGMA synchronous=NORMAL;');
+        
         await this.models.PluginState.sync({ alter: true });
         await this.models.PlayerStats.sync({ alter: true });
         await this.models.RoundHistory.sync({ alter: true });
