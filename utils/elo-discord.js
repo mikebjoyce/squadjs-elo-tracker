@@ -23,6 +23,8 @@
  *     buildAdminConfirmEmbed(...)       — Admin action confirmation embed.
  *     buildErrorEmbed(context, err)     — Error embed with stack trace.
  *     buildRoundSkippedEmbed(...)       — Round-skipped notification embed.
+ *     buildClanStatsEmbed(...)          — Per-clan stats and roster embed.
+ *     buildClansLeaderboardEmbed(...)   — Top-N clan leaderboard embed.
  *     registerDiscordCommands(tracker)
  *       Attaches onDiscordMessage and _findPlayerByIdentifier onto
  *       the tracker instance.
@@ -101,6 +103,56 @@ const getRegEmoji = (leadShare) => {
   return '🟢';
 };
 const getEloEmoji = (delta) => delta < 1.0 ? '🟢' : (delta <= 2.5 ? '🟡' : '🔴');
+
+const NON_ASCII_MAP = {
+  'ƒ': 'f', 'И': 'n', '丹': 'a', '匚': 'c', 'н': 'h', '尺': 'r', 'λ': 'a', 'ν': 'v', 'є': 'e',
+  '†': 't', 'Ð': 'd', 'ø': 'o', 'ß': 'ss', 'ค': 'a', 'г': 'r', 'ς': 'c', 'ɦ': 'h', 'м': 'm',
+  'я': 'r', 'ċ': 'c'
+};
+
+const extractRawPrefix = (name) => {
+  // 1. Match 2+ space separator (common in Squad names) - prioritize this as it's very specific
+  const spaceRegex = /^\s*(.{1,10}?)\s{2,}/;
+  let match = name.match(spaceRegex);
+  if (match) return match[1].trim();
+
+  // 2. Match bracketed tags at the start (allow mismatched pairs like {TAG) or [TAG})
+  const bracketRegex = /^\s*([\[\(【「『《╔├↾╬✦⟦╟|=<\{~\*].+?[\]\)】」』》╗┤↿╬✦⟧╢|=<~\*\}])/;
+  match = name.match(bracketRegex);
+  if (match) return match[1].trim();
+
+  // 3. Match separator-based tags: TAG // Name, TAG | Name, TAG - Name, TAG : Name, TAG † Name, TAG ™ Name, TAG ✯ Name, TAG :( Name
+  const sepRegex = /^\s*(.{1,10}?)\s*(?:\/\/|\||-|:|\:\(|\:\)|†|\u2020|™|✯|~|\*)\s+/;
+  match = name.match(sepRegex);
+  if (match) {
+    return match[1].trim();
+  }
+  
+  // 4. Match single trailing space for very short all-caps tags (e.g. "KM Lookout")
+  // Only match 2-4 chars, all caps, followed by a single space, then a capital letter
+  const shortTagRegex = /^\s*([A-Z0-9]{2,4})\s+[A-Z]/;
+  match = name.match(shortTagRegex);
+  if (match) return match[1].trim();
+
+  return null;
+};
+
+const normalizeTag = (raw) => {
+  if (!raw) return null;
+  
+  // Handle accents (e.g. Café -> Cafe)
+  let norm = raw.normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+    
+  // Replace gamer characters (e.g. 丹 -> a)
+  for (const [key, val] of Object.entries(NON_ASCII_MAP)) {
+    norm = norm.replace(new RegExp(key, 'gi'), val);
+  }
+  
+  // Strip all non-alphanumeric and uppercase
+  norm = norm.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+  return norm || null;
+};
 
 const generateMatrixTable = (t1, t2) => {
   const fmtPct = (v) => (v !== null && v !== undefined) ? `${Math.round(v * 100)}%` : '--%';
@@ -397,6 +449,59 @@ export const EloDiscord = {
       color: 0xf39c12,
       title: `🏆 Leaderboard ${rankRangeText}`,
       description: `Out of **${totalRankedFmt}** ranked players (${totalPlayersFmt} total)\n\`\`\`text\n${lines.join('\n')}\n\`\`\``,
+      timestamp: new Date().toISOString()
+    };
+  },
+
+  buildClanStatsEmbed(displayTag, members, rankedCount, totalWins, totalLosses, avgMu, avgSigma, avgCsr, sortedMembers, minRounds = 10) {
+    const wr = (totalWins + totalLosses) > 0 ? ((totalWins / (totalWins + totalLosses)) * 100).toFixed(1) : '—';
+    
+    // Format roster lines (Top 20)
+    const rosterLines = sortedMembers.slice(0, 20).map((p, i) => {
+      const pCsr = p.mu - (EloCalculator.SIGMA_MULTIPLIER * p.sigma);
+      const prov = p.roundsPlayed < minRounds ? ' [prov]' : '';
+      return `${(i + 1).toString().padStart(2)}. ${p.name.padEnd(20)} ${pCsr.toFixed(1).padStart(5)} CSR${prov}`;
+    });
+
+    const rosterText = rosterLines.length > 0 
+      ? `\`\`\`text\n${rosterTextHeader()}\n${rosterLines.join('\n')}\n\`\`\``
+      : 'No members found.';
+
+    function rosterTextHeader() {
+      return ' #  Name                 Rating\n' + '-------------------------------';
+    }
+
+    return {
+      color: 0x3498db,
+      title: `🛡️ Clan Stats for ${displayTag}`,
+      fields: [
+        { name: 'Members', value: `${members.length} (${rankedCount} ranked)`, inline: true },
+        { name: 'Winrate', value: `${wr}% (${totalWins}W / ${totalLosses}L)`, inline: true },
+        { name: 'Average Rating', value: `CSR: **${avgCsr?.toFixed(1) ?? 'n/a'}**\nμ: ${avgMu.toFixed(1)} | σ: ${avgSigma.toFixed(2)}`, inline: false },
+        { name: 'Roster (Top 20)', value: rosterText, inline: false }
+      ],
+      timestamp: new Date().toISOString()
+    };
+  },
+
+  buildClansLeaderboardEmbed(clanList, limit, minMembers) {
+    const lines = clanList.slice(0, limit).map((c, i) => {
+      const rankStr = (i + 1).toString().padStart(2);
+      const tagStr = c.displayTag.padEnd(16).substring(0, 16);
+      const csrStr = c.avgCsr === -999 ? 'n/a'.padStart(5) : c.avgCsr.toFixed(1).padStart(5);
+      const membersStr = `${c.members.length}m`.padStart(4);
+      const wrStr = `${c.wr.toFixed(0)}%`.padStart(4);
+      
+      return `#${rankStr} ${tagStr} ${csrStr} CSR ${membersStr} ${wrStr}`;
+    });
+
+    const header = ' #  Clan Tag         Rating    Size  WR\n' + '---------------------------------------';
+    const body = lines.length > 0 ? lines.join('\n') : 'No clans meet the requirements.';
+
+    return {
+      color: 0xf1c40f,
+      title: `🛡️ Clan Leaderboard (Top ${limit})`,
+      description: `Ranking clans with ≥${minMembers} members by average CSR\n\`\`\`text\n${header}\n${body}\n\`\`\``,
       timestamp: new Date().toISOString()
     };
   },
@@ -801,6 +906,8 @@ export const EloDiscord = {
                 '`!elo <name | steamID | eosID>` — Look up another player',
                 '`!elo link <SteamID>` — Link your Discord account to your SteamID',
                 '`!elo leaderboard [rank]` — Show 25 players, optionally centered around a specific rank',
+                '`!elo clans` — Show the top 25 clans by average CSR',
+                '`!elo clan <tag>` — Show detailed stats and roster for a clan',
                 '`!elo explain` — Explains the ranking algorithm and symbols',
                 '`!elo help` — Show this message'
               ].join('\n'),
@@ -811,6 +918,7 @@ export const EloDiscord = {
               value: [
                 '`!elo status` — Plugin status and current round info',
                 '`!elo roundinfo` — Live round snapshot: team balance, veterancy, and match health',
+                '`!elo clans [n|all]` — Advanced clan leaderboard (n up to 50, "all" for all tags)',
                 '`!elo reset` — Wipe ALL ratings and round history (requires confirm)',
                 '`!elo reset confirm` — Confirm a pending full reset',
                 '`!elo reset <identifier>` — Reset a single player to default rating',
@@ -877,6 +985,120 @@ export const EloDiscord = {
         const players = await this.db.getLeaderboard(limit, minRounds, offset);
         const displayTargetRank = isCentered ? targetRank : null;
         await EloDiscord.sendDiscordMessage(message.channel, { embeds: [EloDiscord.buildLeaderboardEmbed(players, limit, startRank, totalRanked, totalPlayers, displayTargetRank)] });
+        return;
+      }
+
+      if (sub === 'clan') {
+        const query = args.slice(1).join(' ');
+        if (!query) {
+          await message.reply('Please specify a clan tag (e.g. `!elo clan FRWRD`)');
+          return;
+        }
+
+        const searchNorm = normalizeTag(query);
+        if (!searchNorm) {
+          await message.reply('Invalid clan tag query.');
+          return;
+        }
+
+        const allPlayers = await this.db.exportPlayerStats();
+        const members = allPlayers.filter(p => normalizeTag(extractRawPrefix(p.name)) === searchNorm);
+
+        if (members.length === 0) {
+          await message.reply(`No players found with clan tag matching: "${query}"`);
+          return;
+        }
+
+        const minRounds = this.options.minRoundsForLeaderboard;
+        let totalWins = 0, totalLosses = 0, totalMu = 0, totalSigma = 0, rankedCount = 0, totalCsr = 0;
+        const rawCounts = {};
+
+        members.forEach(p => {
+          const raw = extractRawPrefix(p.name);
+          rawCounts[raw] = (rawCounts[raw] || 0) + 1;
+          totalWins += p.wins;
+          totalLosses += p.losses;
+          totalMu += p.mu;
+          totalSigma += p.sigma;
+          if (p.roundsPlayed >= minRounds) {
+            rankedCount++;
+            totalCsr += (p.mu - (EloCalculator.SIGMA_MULTIPLIER * p.sigma));
+          }
+        });
+
+        const displayTag = Object.entries(rawCounts).sort((a, b) => b[1] - a[1])[0][0];
+        const avgMu = totalMu / members.length;
+        const avgSigma = totalSigma / members.length;
+        const avgCsr = rankedCount > 0 ? totalCsr / rankedCount : null;
+        const sortedMembers = [...members].sort((a, b) => {
+          const csrA = a.mu - (EloCalculator.SIGMA_MULTIPLIER * a.sigma);
+          const csrB = b.mu - (EloCalculator.SIGMA_MULTIPLIER * b.sigma);
+          return csrB - csrA;
+        });
+
+        await EloDiscord.sendDiscordMessage(message.channel, {
+          embeds: [EloDiscord.buildClanStatsEmbed(displayTag, members, rankedCount, totalWins, totalLosses, avgMu, avgSigma, avgCsr, sortedMembers, minRounds)]
+        });
+        return;
+      }
+
+      if (sub === 'clans') {
+        const arg = args[1]?.toLowerCase();
+        const isAll = arg === 'all' && isAdminChannel;
+        let limit = 25;
+        let minMembers = 3;
+
+        if (isAdminChannel && arg) {
+          if (arg === 'all') {
+            limit = 50;
+            minMembers = 1;
+          } else {
+            const parsedN = parseInt(arg, 10);
+            if (!isNaN(parsedN)) limit = Math.min(Math.max(1, parsedN), 50);
+          }
+        }
+
+        const allPlayers = await this.db.exportPlayerStats();
+        const minRounds = this.options.minRoundsForLeaderboard;
+        const clans = {};
+
+        allPlayers.forEach(p => {
+          const raw = extractRawPrefix(p.name);
+          const norm = normalizeTag(raw);
+          if (!norm) return;
+
+          if (!clans[norm]) {
+            clans[norm] = { norm, rawTags: {}, members: [], totalMu: 0, totalCsr: 0, rankedCount: 0, wins: 0, losses: 0 };
+          }
+
+          const c = clans[norm];
+          c.rawTags[raw] = (c.rawTags[raw] || 0) + 1;
+          c.members.push(p);
+          c.totalMu += p.mu;
+          c.wins += p.wins;
+          c.losses += p.losses;
+          if (p.roundsPlayed >= minRounds) {
+            c.rankedCount++;
+            c.totalCsr += (p.mu - (EloCalculator.SIGMA_MULTIPLIER * p.sigma));
+          }
+        });
+
+        const clanList = Object.values(clans)
+          .filter(c => c.members.length >= minMembers)
+          .map(c => {
+            const displayTag = Object.entries(c.rawTags).sort((a, b) => b[1] - a[1])[0][0];
+            return {
+              ...c,
+              displayTag,
+              avgCsr: c.rankedCount > 0 ? c.totalCsr / c.rankedCount : -999,
+              wr: (c.wins + c.losses) > 0 ? (c.wins / (c.wins + c.losses)) * 100 : 0
+            };
+          })
+          .sort((a, b) => b.avgCsr - a.avgCsr);
+
+        await EloDiscord.sendDiscordMessage(message.channel, {
+          embeds: [EloDiscord.buildClansLeaderboardEmbed(clanList, limit, minMembers)]
+        });
         return;
       }
 

@@ -143,7 +143,7 @@ import { EloDiscord } from '../utils/elo-discord.js';
 import EloCommands from '../utils/elo-commands.js';
 
 export default class EloTracker extends BasePlugin {
-  static version = '1.2.1';
+  static version = '1.2.2';
 
   static get description() {
     return 'A SquadJS plugin that tracks player participation across rounds, computes individual ELO ratings using a TrueSkill-based algorithm, and persists all data via SQLite.';
@@ -985,6 +985,13 @@ export default class EloTracker extends BasePlugin {
       averageMu: total / players.length,
       playerCount: players.length
     };
+  }
+
+  getMu(player) {
+    if (!player) return EloCalculator.MU_DEFAULT;
+    const cached = this.eloCache.get(player.eosID);
+    if (cached) return cached.mu;
+    return EloCalculator.MU_DEFAULT;
   }
 
   async getRatingsByEosIDs(eosIDs) {

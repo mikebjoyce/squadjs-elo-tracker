@@ -31,6 +31,18 @@ const MIN_ROUNDS_RANKED = 10;
 const LEADERBOARD_SIZE = 25;
 const LOCAL_NEIGHBORHOOD = 9;
 
+const BRACKET_PAIRS = [
+  ['\\[', '\\]'], ['\\(', '\\)'], ['【', '】'], ['「', '」'], ['『', '』'], ['《', '》'],
+  ['╔', '╗'], ['├', '┤'], ['↾', '↿'], ['╬', '╬'], ['✦', '✦'], ['⟦', '⟧'], ['╟', '╢'],
+  ['\\|', '\\|'], ['=', '='], ['<', '>'], ['\\{', '\\}']
+];
+
+const NON_ASCII_MAP = {
+  'ƒ': 'f', 'И': 'n', '丹': 'a', '匚': 'c', 'н': 'h', '尺': 'r', 'λ': 'a', 'ν': 'v', 'є': 'e',
+  '†': 't', 'Ð': 'd', 'ø': 'o', 'ß': 'ss', 'ค': 'a', 'г': 'r', 'ς': 'c', 'ɦ': 'h', 'м': 'm',
+  'я': 'r', 'ċ': 'c'
+};
+
 // ─── Load DB ─────────────────────────────────────────────────────────────────
 
 function loadDB(path) {
@@ -101,6 +113,44 @@ function findPlayer(db, query) {
   if (!hit) hit = db.find(p => p.name.toLowerCase().includes(q));
   if (!hit) hit = db.find(p => p.eosID === query || p.steamID === query);
   return hit ?? null;
+}
+
+function extractRawPrefix(name) {
+  // 1. Match 2+ space separator (common in Squad names) - prioritize this as it's very specific
+  const spaceRegex = /^\s*(.{1,10}?)\s{2,}/;
+  let match = name.match(spaceRegex);
+  if (match) return match[1].trim();
+
+  // 2. Match bracketed tags at the start (allow mismatched pairs like {TAG) or [TAG})
+  const bracketRegex = /^\s*([\[\(【「『《╔├↾╬✦⟦╟|=<\{~\*].+?[\]\)】」』》╗┤↿╬✦⟧╢|=<~\*\}])/;
+  match = name.match(bracketRegex);
+  if (match) return match[1].trim();
+
+  // 3. Match separator-based tags: TAG // Name, TAG | Name, TAG - Name, TAG : Name, TAG † Name, TAG ✯ Name, TAG :( Name
+  const sepRegex = /^\s*(.{1,10}?)\s*(?:\/\/|\||-|:|\:\(|\:\)|†|\u2020|™|✯|~|\*)\s+/;
+  match = name.match(sepRegex);
+  if (match) {
+    return match[1].trim();
+  }
+
+  return null;
+}
+
+function normalizeTag(raw) {
+  if (!raw) return null;
+
+  // Handle accents (e.g. Café -> Cafe)
+  let norm = raw.normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+
+  // Replace gamer characters (e.g. 丹 -> a)
+  for (const [key, val] of Object.entries(NON_ASCII_MAP)) {
+    norm = norm.replace(new RegExp(key, 'gi'), val);
+  }
+
+  // Strip all non-alphanumeric and uppercase
+  norm = norm.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+  return norm || null;
 }
 
 function rankOf(board, player) {
@@ -241,6 +291,158 @@ function cmdPlayer(query, db, dbPrev) {
     });
     console.log();
   }
+}
+
+// ─── !elo clan <tag> ─────────────────────────────────────────────────────────
+
+function cmdClan(query, db, dbPrev) {
+  if (!query) {
+    console.log(r(`  Please specify a clan tag (e.g. !elo clan FRWRD)`));
+    return;
+  }
+
+  const searchNorm = normalizeTag(query);
+  if (!searchNorm) {
+    console.log(r(`  Invalid clan tag query.`));
+    return;
+  }
+  
+  // Find all players with a matching normalized clan tag
+  const members = db.filter(p => {
+    const raw = extractRawPrefix(p.name);
+    return normalizeTag(raw) === searchNorm;
+  });
+
+  if (members.length === 0) {
+    console.log(r(`  No players found with clan tag matching: "${query}"`));
+    return;
+  }
+
+  // Calculate aggregates
+  let totalWins = 0;
+  let totalLosses = 0;
+  let totalMu = 0;
+  let totalSigma = 0;
+  let rankedCount = 0;
+  let totalCsr = 0;
+
+  // Determine best display name (most common raw tag)
+  const rawCounts = {};
+  members.forEach(p => {
+    const raw = extractRawPrefix(p.name);
+    rawCounts[raw] = (rawCounts[raw] || 0) + 1;
+
+    totalWins += p.wins;
+    totalLosses += p.losses;
+    totalMu += p.mu;
+    totalSigma += p.sigma;
+    if (p.roundsPlayed >= MIN_ROUNDS_RANKED) {
+      rankedCount++;
+      totalCsr += csr(p);
+    }
+  });
+
+  const displayTag = Object.entries(rawCounts).sort((a,b) => b[1] - a[1])[0][0];
+  const count = members.length;
+  const avgMu = totalMu / count;
+  const avgSigma = totalSigma / count;
+  const avgCsr = rankedCount > 0 ? totalCsr / rankedCount : null;
+  const games = totalWins + totalLosses;
+  const wr = games > 0 ? ((totalWins / games) * 100).toFixed(1) : '—';
+
+  console.log();
+  console.log(b(c(`🛡️ Clan Stats for ${displayTag}`)));
+  console.log(hr());
+  console.log(`  ${b('Members')}:       ${count} (${rankedCount} ranked)`);
+  console.log(`  ${b('Match History')}: ${totalWins}W / ${totalLosses}L  (${wr}% winrate)`);
+  console.log(`  ${b('Average μ')}:     ${avgMu.toFixed(2)}`);
+  console.log(`  ${b('Average σ')}:     ${avgSigma.toFixed(2)}`);
+  if (avgCsr !== null) {
+    console.log(`  ${b('Average CSR')}:   ${avgCsr.toFixed(1)}`);
+  }
+  console.log();
+
+  // Sort members by CSR
+  const sortedMembers = [...members].sort((a, b) => csr(b) - csr(a));
+
+  console.log(b('  Roster'));
+  console.log(`  ${'─'.repeat(48)}`);
+  sortedMembers.forEach((p, i) => {
+    const pCsr = csr(p);
+    const prov = p.roundsPlayed < MIN_ROUNDS_RANKED ? y(' [prov]') : '';
+    const line = `  ${(i + 1).toString().padStart(2)}. ${p.name.padEnd(24)} ${b(pCsr.toFixed(1))} CSR  ${d(`${p.wins}W/${p.losses}L`)}${prov}`;
+    console.log(line);
+  });
+  console.log();
+}
+
+// ─── !elo clans ──────────────────────────────────────────────────────────────
+
+function cmdClans(db, arg) {
+  const clans = {};
+  const showAll = arg === 'all';
+  const limit = showAll ? Infinity : (parseInt(arg, 10) || LEADERBOARD_SIZE);
+  const minMembers = showAll ? 1 : 3;
+
+  db.forEach(p => {
+    const raw = extractRawPrefix(p.name);
+    const norm = normalizeTag(raw);
+    if (!norm) return;
+
+    if (!clans[norm]) {
+      clans[norm] = {
+        norm,
+        rawTags: {},
+        members: [],
+        totalMu: 0,
+        totalCsr: 0,
+        rankedCount: 0,
+        wins: 0,
+        losses: 0
+      };
+    }
+
+    const c = clans[norm];
+    c.rawTags[raw] = (c.rawTags[raw] || 0) + 1;
+    c.members.push(p);
+    c.totalMu += p.mu;
+    c.wins += p.wins;
+    c.losses += p.losses;
+    if (p.roundsPlayed >= MIN_ROUNDS_RANKED) {
+      c.rankedCount++;
+      c.totalCsr += csr(p);
+    }
+  });
+
+  const clanList = Object.values(clans)
+    .filter(c => c.members.length >= minMembers)
+    .map(c => {
+      const displayTag = Object.entries(c.rawTags).sort((a,b) => b[1] - a[1])[0][0];
+      return {
+        ...c,
+        displayTag,
+        avgCsr: c.rankedCount > 0 ? c.totalCsr / c.rankedCount : -999,
+        avgMu: c.totalMu / c.members.length,
+        wr: (c.wins + c.losses) > 0 ? (c.wins / (c.wins + c.losses)) * 100 : 0
+      };
+    })
+    .sort((a, b) => b.avgCsr - a.avgCsr);
+
+  const displayLimit = Math.min(limit, clanList.length);
+  console.log();
+  console.log(b(y(`🛡️ Clan Leaderboard (Top ${displayLimit === Infinity ? 'All' : displayLimit})`)));
+  console.log(`   Ranking clans with ≥${minMembers} members by average CSR`);
+  console.log(hr());
+
+  clanList.slice(0, limit).forEach((c, i) => {
+    const rankStr = `#${(i + 1).toString().padStart(2)}`;
+    const csrStr = c.avgCsr === -999 ? d('  n/a') : b(c.avgCsr.toFixed(1).padStart(5));
+    const membersStr = `${c.members.length} members`.padEnd(12);
+    const wrStr = `${c.wr.toFixed(1)}% WR`.padStart(8);
+    
+    console.log(`  ${y(rankStr)} ${c.displayTag.padEnd(20)} ${csrStr} CSR  ${d(membersStr)} ${d(wrStr)}`);
+  });
+  console.log();
 }
 
 // ─── !elo leaderboard [n] ─────────────────────────────────────────────────────
@@ -628,6 +830,8 @@ function cmdHelp() {
   console.log(`  ${c('!elo leaderboard <n>')}      ${LEADERBOARD_SIZE} players centred around rank n`);
   console.log(`  ${c('!elo top')}                  Top 25 by raw μ (debug view)`);
   console.log(`  ${c('!elo spread')}               Distribution stats + sigma buckets`);
+  console.log(`  ${c('!elo clan <tag>')}           Clan aggregate stats and roster`);
+  console.log(`  ${c('!elo clans [all|n]')}        Leaderboard of top clans`);
   console.log(`  ${c('!elo round [id|random]')}    Simulate round end embed for a match in the log`);
   console.log(`  ${c('exit')} / ${c('quit')}               Exit`);
   console.log();
@@ -677,6 +881,18 @@ function dispatch(input) {
   if (sub === 'round') {
     const id = parts[1] || 'random';
     cmdRound(id, dbNew, matchlog);
+    return;
+  }
+
+  if (sub === 'clan') {
+    const query = parts.slice(1).join(' ');
+    cmdClan(query, dbNew, dbOld);
+    return;
+  }
+
+  if (sub === 'clans') {
+    const arg = parts[1]?.toLowerCase();
+    cmdClans(dbNew, arg);
     return;
   }
 

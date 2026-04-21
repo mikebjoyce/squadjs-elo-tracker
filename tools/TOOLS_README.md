@@ -22,6 +22,12 @@ Grid searches TrueSkill BETA and TAU parameters against historical match data, m
 node elo-calibrate.js <matchlog.jsonl> <db-backup.json>
 ```
 
+**`elo-clans-audit.js`**
+Utility script that loads a database JSON and outputs a comprehensive text report mapping all players to their detected clan group. Used to manually verify the extraction and normalization rules.
+```
+node elo-clans-audit.js [path/to/db.json]
+```
+
 **`elo-inspect.js`**
 Interactive CLI tool to query players, view local leaderboards, analyse spread distribution, and simulate Discord round-end embeds using data from a match log. Can accept a secondary backup file to automatically calculate and display rating changes.
 ```

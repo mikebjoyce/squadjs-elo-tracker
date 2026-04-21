@@ -1,4 +1,4 @@
-# EloTracker Plugin v1.2.1
+# EloTracker Plugin v1.2.2
 
 **SquadJS Plugin for Skill-Based Player Rating**
 
@@ -122,6 +122,11 @@ squad-server/
 
 ## Commands
 
+### Tools & Scripts
+
+- `node tools/elo-clans-audit.js [path/to/db.json]` — Generates a report (`tools/clan-audit.txt`) testing the tag extraction and normalization logic against a database export. Useful for finding unhandled clan tag variations.
+- `node tools/elo-inspect.js <rebuilt.json>` — Interactive CLI tool mimicking Discord commands for local testing and DB inspection.
+
 ### In-Game Commands
 
 **Public (all players):**
@@ -144,12 +149,15 @@ squad-server/
 - `!elo <name | steamID | eosID>` — Look up another player.
 - `!elo link <SteamID>` — Link Discord to SteamID (auto-deletes for privacy).
 - `!elo leaderboard [rank]` — Show 25 players, optionally centered around a specific rank.
+- `!elo clans` — Show the top 25 clans ranked by average CSR.
+- `!elo clan <tag>` — Show detailed roster and stats for a specific clan.
 - `!elo explain` — Explains the algorithm and symbols.
 
 **Admin (admin channel only):**
 
 - `!elo status` — Plugin diagnostics and cache state.
 - `!elo roundinfo` — Live snapshot of team balance.
+- `!elo clans [n|all]` — Advanced clan leaderboard (n up to 50, "all" for all tags).
 - `!elo backup` — Export player stats as JSON.
 - `!elo restore` — Restore from an attached JSON backup.
 - `!elo reset confirm` — Wipe **ALL** database ratings.

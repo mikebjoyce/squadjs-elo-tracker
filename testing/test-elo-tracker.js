@@ -32,9 +32,9 @@ export default async function runTrackerTests(runTest) {
       ids.forEach(id => map.set(id, { mu: 25.0, sigma: 8.333 }));
       return map;
     },
-    bulkUpsertPlayerStats: async () => {},
+    bulkIncrementPlayerStats: async () => {},
     insertRoundHistory: async () => {},
-    calls: { bulkUpsert: 0, insertHistory: 0 }
+    calls: { bulkIncrement: 0, insertHistory: 0 }
   });
 
   // Helper to create mock Session Manager
@@ -101,7 +101,7 @@ export default async function runTrackerTests(runTest) {
     
     // Spy on DB methods
     let bulkCalled = false;
-    db.bulkUpsertPlayerStats = async () => { bulkCalled = true; };
+    db.bulkIncrementPlayerStats = async () => { bulkCalled = true; };
     
     tracker.db = db;
     tracker.session = createMockSession();
@@ -126,7 +126,7 @@ export default async function runTrackerTests(runTest) {
     // Spy on DB methods
     let bulkCalled = false;
     let historyCalled = false;
-    db.bulkUpsertPlayerStats = async () => { bulkCalled = true; };
+    db.bulkIncrementPlayerStats = async () => { bulkCalled = true; };
     db.insertRoundHistory = async () => { historyCalled = true; };
 
     tracker.db = db;
@@ -150,7 +150,7 @@ export default async function runTrackerTests(runTest) {
 
     await server.emit('ROUND_ENDED', { winner: 1, tickets: 20 });
 
-    if (!bulkCalled) throw new Error('Failed to call bulkUpsertPlayerStats');
+    if (!bulkCalled) throw new Error('Failed to call bulkIncrementPlayerStats');
     if (!historyCalled) throw new Error('Failed to call insertRoundHistory');
   });
 }
